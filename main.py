@@ -13,6 +13,7 @@ from typing import Dict, Any
 from darx.clients.vertex_ai import generate_site_code
 from darx.clients.github import create_github_repo, push_to_github
 from darx.clients.vercel import deploy_to_vercel
+from darx.clients.builder_io import create_space, register_components, create_initial_page
 from darx.clients.gcp import store_backup, log_generation
 
 # Configuration
@@ -140,7 +141,38 @@ def generate_site(request: Request):
         staging_url = vercel_result['staging_url']
         print(f"   ✅ Deployed to: {staging_url}")
 
-        # Step 5: Store backup in GCS
+        # Step 5: Create Builder.io space and register components
+        print("\n🎨 Setting up Builder.io visual editor...")
+        builder_result = create_space(
+            project_name=project_name,
+            company_name=client_info.get('company_name')
+        )
+
+        builder_space_id = project_name  # Default to project_name
+        if builder_result.get('success'):
+            builder_space_id = builder_result.get('space_id', project_name)
+            print(f"   ✅ Builder.io space created: {builder_space_id}")
+
+            # Register custom components
+            if components:
+                register_result = register_components(
+                    space_id=builder_space_id,
+                    components=components,
+                    staging_url=staging_url
+                )
+                if register_result.get('success'):
+                    print(f"   ✅ Registered {register_result.get('registered', 0)} components")
+
+            # Create initial page entry
+            create_initial_page(
+                space_id=builder_space_id,
+                project_name=project_name
+            )
+        else:
+            print(f"   ⚠️  Builder.io setup skipped: {builder_result.get('error')}")
+            print(f"   ℹ️  Site will still work, but visual editing won't be available")
+
+        # Step 6: Store backup in GCS
         print("\n💾 Storing backup in Cloud Storage...")
         backup_result = store_backup(
             project_name=project_name,
@@ -153,7 +185,7 @@ def generate_site(request: Request):
             }
         )
 
-        # Step 6: Log generation metrics
+        # Step 7: Log generation metrics
         generation_time = time.time() - start_time
         log_generation(
             project_name=project_name,
@@ -172,7 +204,8 @@ def generate_site(request: Request):
             'project_name': project_name,
             'staging_url': staging_url,
             'github_repo': repo_url,
-            'builder_io_project': project_name,
+            'builder_io_project': builder_space_id,
+            'builder_io_url': f'https://builder.io/content?space={builder_space_id}',
             'components_registered': components,
             'generation_time': generation_time,
             'files_generated': len(files)
