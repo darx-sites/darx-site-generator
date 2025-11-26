@@ -116,7 +116,7 @@ Generate complete, production-ready code. Include Builder.io integration for vis
 
         # CRITICAL: Validate that app/page.tsx was generated
         file_paths = [f.get('path', '') for f in files]
-        required_files = ['app/page.tsx', 'app/layout.tsx', 'package.json']
+        required_files = ['app/page.tsx', 'app/layout.tsx', 'package.json', 'vercel.json']
         missing_files = [f for f in required_files if f not in file_paths]
 
         if missing_files:
@@ -205,15 +205,33 @@ WRONG - DO NOT DO THIS:
   ]
 }
 
-REQUIRED FILES (Generate these 6 essential files):
+REQUIRED FILES (Generate these 7 essential files):
 1. package.json - Dependencies (Next.js 14, React 18, TypeScript, Tailwind, Framer Motion)
-2. app/layout.tsx - Root layout with metadata
-3. app/page.tsx - Home page with ALL components inline (Hero, Features, CTA sections all in one file)
-4. app/globals.css - Tailwind directives
-5. tailwind.config.ts - Tailwind configuration
-6. next.config.js - Next.js configuration
+2. vercel.json - Vercel deployment configuration (Node.js version, build settings)
+3. app/layout.tsx - Root layout with metadata
+4. app/page.tsx - Home page with ALL components inline (Hero, Features, CTA sections all in one file)
+5. app/globals.css - Tailwind directives
+6. tailwind.config.ts - Tailwind configuration
+7. next.config.js - Next.js configuration
 
 CRITICAL: Keep components INLINE in app/page.tsx instead of separate component files for simplicity.
+
+PACKAGE.JSON REQUIREMENTS:
+- ONLY include these core dependencies: next@^14.0.0, react@^18.0.0, react-dom@^18.0.0, typescript, @types/node, @types/react, @types/react-dom, tailwind css, postcss, autoprefixer, framer-motion, @builder.io/react
+- Set Node.js engine: "engines": {"node": "20.x"}
+- DO NOT include: isolated-vm, vm2, node-gyp, or any packages with native C++ bindings
+- DO NOT add extra packages beyond what's explicitly requested
+- Keep devDependencies minimal: only TypeScript types and build tools
+
+VERCEL.JSON CONFIGURATION:
+Generate a vercel.json file with:
+{
+  "buildCommand": "next build",
+  "framework": "nextjs",
+  "installCommand": "npm install"
+}
+
+This ensures compatibility and prevents build failures.
 
 STYLING GUIDELINES:
 - Use Tailwind utility classes
