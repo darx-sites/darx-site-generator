@@ -14,6 +14,7 @@ from darx.clients.vertex_ai import generate_site_code
 from darx.clients.github import create_github_repo, push_to_github
 from darx.clients.vercel import deploy_to_vercel
 from darx.clients.builder_io import create_space, register_components, create_initial_page
+from darx.clients.site_editor import edit_site
 from darx.clients.gcp import store_backup, log_generation
 
 # Configuration
@@ -239,6 +240,86 @@ def generate_site(request: Request):
 def health(request: Request):
     """Health check endpoint"""
     return jsonify({'status': 'healthy', 'service': 'darx-site-generator'}), 200
+
+
+@functions_framework.http
+def edit(request: Request):
+    """
+    HTTP endpoint for editing existing DARX Sites.
+
+    Request body:
+    {
+        "project_name": "food-asmr-hub",
+        "edit_type": "color_palette",
+        "changes": {
+            "primary": "#FF6B6B",
+            "accent": "#4ECDC4"
+        }
+    }
+
+    Returns:
+    {
+        "success": true,
+        "files_updated": ["app/page.tsx", "tailwind.config.ts"],
+        "staging_url": "https://food-asmr-hub.vercel.app",
+        "edit_type": "color_palette"
+    }
+    """
+
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        return _cors_response()
+
+    # Parse request
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+
+        project_name = data.get('project_name')
+        edit_type = data.get('edit_type')
+        changes = data.get('changes', {})
+
+        if not project_name or not edit_type:
+            return jsonify({
+                'error': 'Missing required fields: project_name, edit_type'
+            }), 400
+
+    except Exception as e:
+        return jsonify({'error': f'Invalid request: {str(e)}'}), 400
+
+    print(f"\n✏️  Edit request for: {project_name} ({edit_type})")
+
+    start_time = time.time()
+
+    try:
+        # Edit the site
+        result = edit_site(
+            project_name=project_name,
+            edit_type=edit_type,
+            changes=changes,
+            github_org=GITHUB_ORG
+        )
+
+        edit_time = time.time() - start_time
+
+        if result.get('success'):
+            print(f"✅ Edit complete! ({edit_time:.2f}s)")
+            result['edit_time'] = edit_time
+            return jsonify(result), 200
+        else:
+            print(f"❌ Edit failed: {result.get('error')}")
+            return jsonify(result), 500
+
+    except Exception as e:
+        error_msg = str(e)
+        print(f"\n❌ Edit failed: {error_msg}")
+
+        return jsonify({
+            'success': False,
+            'error': error_msg,
+            'project_name': project_name
+        }), 500
 
 
 def _cors_response():

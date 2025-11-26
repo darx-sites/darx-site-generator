@@ -223,3 +223,114 @@ def push_to_github(
             'success': False,
             'error': f'Failed to push to GitHub: {str(e)}'
         }
+
+
+def get_file_content(
+    org: str,
+    repo_name: str,
+    file_path: str,
+    branch: str = "main"
+) -> Dict[str, Any]:
+    """
+    Get the content of a file from GitHub.
+
+    Args:
+        org: Organization name
+        repo_name: Repository name
+        file_path: Path to file (e.g., 'app/page.tsx')
+        branch: Branch name (default: main)
+
+    Returns:
+        {
+            'success': bool,
+            'content': str,
+            'sha': str (needed for updates),
+            'error': str (if failed)
+        }
+    """
+
+    try:
+        github = get_github_client()
+        repo = github.get_repo(f"{org}/{repo_name}")
+
+        # Get file content
+        file_content = repo.get_contents(file_path, ref=branch)
+
+        # Decode base64 content
+        content = base64.b64decode(file_content.content).decode('utf-8')
+
+        return {
+            'success': True,
+            'content': content,
+            'sha': file_content.sha
+        }
+
+    except GithubException as e:
+        if e.status == 404:
+            return {
+                'success': False,
+                'error': f'File not found: {file_path}'
+            }
+        return {
+            'success': False,
+            'error': f'GitHub API error: {str(e)}'
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+def update_file_content(
+    org: str,
+    repo_name: str,
+    file_path: str,
+    content: str,
+    sha: str,
+    commit_message: str = "Update file",
+    branch: str = "main"
+) -> Dict[str, Any]:
+    """
+    Update a file in GitHub repository.
+
+    Args:
+        org: Organization name
+        repo_name: Repository name
+        file_path: Path to file
+        content: New file content
+        sha: SHA of file being replaced (from get_file_content)
+        commit_message: Commit message
+        branch: Branch name (default: main)
+
+    Returns:
+        {
+            'success': bool,
+            'commit_sha': str,
+            'error': str (if failed)
+        }
+    """
+
+    try:
+        github = get_github_client()
+        repo = github.get_repo(f"{org}/{repo_name}")
+
+        # Update file
+        result = repo.update_file(
+            path=file_path,
+            message=commit_message,
+            content=content,
+            sha=sha,
+            branch=branch
+        )
+
+        return {
+            'success': True,
+            'commit_sha': result['commit'].sha
+        }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to update file: {str(e)}'
+        }
