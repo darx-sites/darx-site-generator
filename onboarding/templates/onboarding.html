@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DARX Client Onboarding</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --error: #dc2626;
+            --success: #16a34a;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-500: #6b7280;
+            --gray-700: #374151;
+            --gray-900: #111827;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--gray-50);
+            color: var(--gray-900);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .container {
+            max-width: 640px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+            flex: 1;
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+            padding: 2rem;
+        }
+
+        .card-header {
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .card-header h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--gray-900);
+        }
+
+        .card-header p {
+            color: var(--gray-500);
+            margin-top: 0.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 500;
+            color: var(--gray-700);
+            margin-bottom: 0.5rem;
+        }
+
+        .form-group label .required {
+            color: var(--error);
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--gray-300);
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .form-group .help-text {
+            font-size: 0.875rem;
+            color: var(--gray-500);
+            margin-top: 0.25rem;
+        }
+
+        .form-section {
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--gray-200);
+        }
+
+        .form-section h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--gray-900);
+            margin-bottom: 1rem;
+        }
+
+        .form-section .section-description {
+            color: var(--gray-500);
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+
+        .alert-error {
+            background-color: #fef2f2;
+            border: 1px solid #fecaca;
+            color: var(--error);
+        }
+
+        .alert-error ul {
+            margin: 0;
+            padding-left: 1.25rem;
+        }
+
+        .alert-error li {
+            margin-bottom: 0.25rem;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+            font-weight: 500;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.15s;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+            width: 100%;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .btn-primary:disabled {
+            background-color: var(--gray-300);
+            cursor: not-allowed;
+        }
+
+        .security-notice {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background-color: var(--gray-100);
+            border-radius: 8px;
+            font-size: 0.875rem;
+            color: var(--gray-700);
+        }
+
+        .security-notice svg {
+            display: inline-block;
+            width: 1.25rem;
+            height: 1.25rem;
+            vertical-align: middle;
+            margin-right: 0.5rem;
+        }
+
+        footer {
+            text-align: center;
+            padding: 1.5rem;
+            color: var(--gray-500);
+            font-size: 0.875rem;
+        }
+
+        @media (max-width: 640px) {
+            .container {
+                padding: 1rem;
+            }
+
+            .card {
+                padding: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <h1>DARX</h1>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Client Onboarding</h2>
+                <p>Complete this form to set up your DARX account and connect your Builder.io Space.</p>
+            </div>
+
+            {% if errors %}
+            <div class="alert alert-error">
+                <strong>Please fix the following errors:</strong>
+                <ul>
+                    {% for error in errors %}
+                    <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <form method="POST" action="/onboard/{{ token }}" id="onboarding-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+                <!-- Basic Information -->
+                <div class="form-group">
+                    <label for="client_name">
+                        Company Name <span class="required">*</span>
+                    </label>
+                    <input type="text" id="client_name" name="client_name"
+                           value="{{ form_data.client_name if form_data else '' }}"
+                           placeholder="Acme Corporation" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="client_slug">
+                        Client Identifier <span class="required">*</span>
+                    </label>
+                    <input type="text" id="client_slug" name="client_slug"
+                           value="{{ client_slug }}"
+                           placeholder="acme-corp" required pattern="[a-z0-9-]+" readonly>
+                    <div class="help-text">URL-safe identifier (lowercase, numbers, hyphens only)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="contact_email">
+                        Contact Email <span class="required">*</span>
+                    </label>
+                    <input type="email" id="contact_email" name="contact_email"
+                           value="{{ form_data.contact_email if form_data else '' }}"
+                           placeholder="admin@acme.com" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="website_type">
+                        Website Type <span class="required">*</span>
+                    </label>
+                    <select id="website_type" name="website_type" required>
+                        <option value="">Select a type...</option>
+                        <option value="marketing" {% if form_data and form_data.website_type == 'marketing' %}selected{% endif %}>Marketing Website</option>
+                        <option value="ecommerce" {% if form_data and form_data.website_type == 'ecommerce' %}selected{% endif %}>E-commerce</option>
+                        <option value="documentation" {% if form_data and form_data.website_type == 'documentation' %}selected{% endif %}>Documentation</option>
+                        <option value="portfolio" {% if form_data and form_data.website_type == 'portfolio' %}selected{% endif %}>Portfolio</option>
+                        <option value="blog" {% if form_data and form_data.website_type == 'blog' %}selected{% endif %}>Blog</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="industry">Industry</label>
+                    <input type="text" id="industry" name="industry"
+                           value="{{ form_data.industry if form_data else '' }}"
+                           placeholder="Technology, Healthcare, Finance, etc.">
+                    <div class="help-text">Optional - helps us customize templates</div>
+                </div>
+
+                <!-- Builder.io Credentials Section -->
+                <div class="form-section">
+                    <h3>Builder.io Credentials</h3>
+                    <p class="section-description">
+                        Enter your Builder.io Space credentials. You can find these in your
+                        <a href="https://builder.io/account/space" target="_blank">Builder.io Space settings</a>.
+                    </p>
+
+                    <div class="form-group">
+                        <label for="builder_public_key">
+                            Builder.io Public Key <span class="required">*</span>
+                        </label>
+                        <input type="text" id="builder_public_key" name="builder_public_key"
+                               value="{{ form_data.builder_public_key if form_data else '' }}"
+                               placeholder="pub-xxxxxxxxxxxxxxxxx" required>
+                        <div class="help-text">Starts with "pub-" - found in Space settings</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="builder_private_key">
+                            Builder.io Private Key <span class="required">*</span>
+                        </label>
+                        <input type="password" id="builder_private_key" name="builder_private_key"
+                               placeholder="Your private API key" required>
+                        <div class="help-text">This will be stored securely and never shared</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="builder_space_id">Builder.io Space ID</label>
+                        <input type="text" id="builder_space_id" name="builder_space_id"
+                               value="{{ form_data.builder_space_id if form_data else '' }}"
+                               placeholder="xxxxxxxxxxxxxxxx">
+                        <div class="help-text">Optional - found in your Space URL</div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="submit-btn">
+                    Complete Onboarding
+                </button>
+
+                <div class="security-notice">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    <strong>Your data is secure.</strong> All credentials are encrypted and transmitted over HTTPS.
+                    We never share your private keys with third parties.
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <footer>
+        &copy; 2024 DARX. All rights reserved.
+    </footer>
+
+    <script>
+        // Form submission handling
+        document.getElementById('onboarding-form').addEventListener('submit', function(e) {
+            const btn = document.getElementById('submit-btn');
+            btn.disabled = true;
+            btn.textContent = 'Processing...';
+        });
+
+        // Auto-format slug input
+        document.getElementById('client_slug').addEventListener('input', function(e) {
+            this.value = this.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        });
+    </script>
+</body>
+</html>

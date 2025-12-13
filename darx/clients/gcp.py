@@ -8,11 +8,32 @@ import zipfile
 import io
 from datetime import datetime
 from google.cloud import storage
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
+from supabase import create_client, Client
 
 # Configuration
 PROJECT_ID = os.getenv('GCP_PROJECT', 'sylvan-journey-474401-f9')
 BUCKET_NAME = os.getenv('GCS_BUCKET', 'darx-generated-sites')
+
+# Supabase configuration
+SUPABASE_URL = os.getenv('SUPABASE_URL')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+
+# Global Supabase client
+_supabase_client = None
+
+
+def get_supabase_client() -> Optional[Client]:
+    """Get or create Supabase client"""
+    global _supabase_client
+
+    if _supabase_client is None:
+        if SUPABASE_URL and SUPABASE_KEY:
+            _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        else:
+            print("⚠️  Supabase not configured (SUPABASE_URL or SUPABASE_KEY missing)")
+
+    return _supabase_client
 
 
 def store_backup(
@@ -86,29 +107,52 @@ def log_generation(
     files: int,
     generation_time: float,
     success: bool,
-    error: str = None
+    error: str = None,
+    deployment_url: str = None,
+    build_state: str = None,
+    build_logs: str = None
 ):
     """
-    Log generation metrics to Supabase.
+    Log generation metrics to Supabase and Cloud Logging.
 
-    Note: This requires Supabase client to be configured.
-    For now, just print to stdout (Cloud Logging will capture).
+    Args:
+        project_name: Name of the generated project
+        industry: Industry type (real-estate, saas, etc.)
+        components: Number of components generated
+        files: Number of files generated
+        generation_time: Time taken to generate (seconds)
+        success: Whether generation succeeded
+        error: Error message if failed
+        deployment_url: Vercel deployment URL
+        build_state: Build state (READY, ERROR, etc.)
+        build_logs: Build logs if failed
     """
 
     log_entry = {
-        'timestamp': datetime.utcnow().isoformat(),
+        'created_at': datetime.utcnow().isoformat(),
         'project_name': project_name,
         'industry': industry,
         'components_generated': components,
         'files_generated': files,
-        'generation_time': round(generation_time, 2),
+        'generation_time_seconds': round(generation_time, 2),
         'success': success,
-        'error': error
+        'error_message': error,
+        'deployment_url': deployment_url,
+        'build_state': build_state,
+        'build_logs': build_logs
     }
 
     # Log to stdout (captured by Cloud Logging)
     print(f"\n📊 Generation Metrics:")
     print(json.dumps(log_entry, indent=2))
 
-    # TODO: Store in Supabase darx_site_generations table
-    # supabase_client.table('darx_site_generations').insert(log_entry).execute()
+    # Store in Supabase
+    try:
+        supabase = get_supabase_client()
+        if supabase:
+            supabase.table('darx_site_generations').insert(log_entry).execute()
+            print("   ✅ Logged to Supabase")
+        else:
+            print("   ⚠️  Supabase not available, logged to Cloud Logging only")
+    except Exception as e:
+        print(f"   ⚠️  Failed to log to Supabase: {str(e)}")

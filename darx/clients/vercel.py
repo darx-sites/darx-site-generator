@@ -64,9 +64,21 @@ def deploy_to_vercel(
         if not deployment:
             raise Exception("Failed to trigger Vercel deployment")
 
-        # Wait a moment for URL to be available
-        import time
-        time.sleep(2)
+        deployment_id = deployment.get('id')
+
+        # Step 4: Wait for build to complete
+        build_result = check_deployment_status(deployment_id, headers, max_wait_seconds=300)
+
+        if not build_result['success']:
+            # Build failed - include error details
+            error_msg = build_result.get('error', 'Build failed')
+            build_logs = build_result.get('build_logs', '')
+
+            full_error = f"{error_msg}"
+            if build_logs:
+                full_error += f"\n\nBuild logs:\n{build_logs}"
+
+            raise Exception(full_error)
 
         staging_url = f"https://{project_name}.vercel.app"
         production_url = f"https://{project_name}.darx.site"  # Custom domain (needs DNS)
@@ -75,7 +87,8 @@ def deploy_to_vercel(
             'success': True,
             'staging_url': staging_url,
             'production_url': production_url,
-            'deployment_id': deployment.get('id')
+            'deployment_id': deployment_id,
+            'build_state': build_result.get('state')
         }
 
     except Exception as e:
@@ -173,3 +186,128 @@ def _trigger_deployment(project_id: str, github_repo: str, repo_id: int, headers
     else:
         print(f"Failed to trigger deployment: {response.text}")
         return None
+
+
+def check_deployment_status(deployment_id: str, headers: Dict, max_wait_seconds: int = 300) -> Dict[str, Any]:
+    """
+    Poll deployment status until it completes (success or error).
+
+    Args:
+        deployment_id: Vercel deployment ID
+        headers: API headers with auth token
+        max_wait_seconds: Maximum time to wait (default: 5 minutes)
+
+    Returns:
+        {
+            'success': bool,
+            'state': str (READY, ERROR, BUILDING, etc.),
+            'error': str (if failed),
+            'build_logs': str (if failed)
+        }
+    """
+    import time
+
+    url = f"https://api.vercel.com/v13/deployments/{deployment_id}"
+    if VERCEL_TEAM_ID:
+        url += f"?teamId={VERCEL_TEAM_ID}"
+
+    start_time = time.time()
+    poll_interval = 5  # Check every 5 seconds
+
+    print(f"   Waiting for Vercel build to complete (deployment: {deployment_id})...")
+
+    while True:
+        elapsed = time.time() - start_time
+
+        if elapsed > max_wait_seconds:
+            return {
+                'success': False,
+                'state': 'TIMEOUT',
+                'error': f'Build timed out after {max_wait_seconds} seconds'
+            }
+
+        # Get deployment status
+        try:
+            response = requests.get(url, headers=headers)
+
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'state': 'ERROR',
+                    'error': f'Failed to check deployment status: {response.text}'
+                }
+
+            deployment = response.json()
+            state = deployment.get('readyState', 'UNKNOWN')
+
+            print(f"   Build status: {state} ({int(elapsed)}s elapsed)")
+
+            # Check for completion states
+            if state == 'READY':
+                return {
+                    'success': True,
+                    'state': state,
+                    'url': deployment.get('url')
+                }
+
+            elif state == 'ERROR':
+                # Fetch build logs to get error details
+                build_logs = _fetch_build_logs(deployment_id, headers)
+
+                return {
+                    'success': False,
+                    'state': state,
+                    'error': 'Build failed on Vercel',
+                    'build_logs': build_logs
+                }
+
+            elif state == 'CANCELED':
+                return {
+                    'success': False,
+                    'state': state,
+                    'error': 'Build was canceled'
+                }
+
+            # Still building - wait and try again
+            time.sleep(poll_interval)
+
+        except Exception as e:
+            return {
+                'success': False,
+                'state': 'ERROR',
+                'error': f'Error checking deployment status: {str(e)}'
+            }
+
+
+def _fetch_build_logs(deployment_id: str, headers: Dict) -> str:
+    """Fetch build logs for a failed deployment"""
+
+    try:
+        # Get deployment events/logs
+        url = f"https://api.vercel.com/v2/deployments/{deployment_id}/events"
+        if VERCEL_TEAM_ID:
+            url += f"?teamId={VERCEL_TEAM_ID}"
+
+        response = requests.get(url, headers=headers)
+
+        if response.status_code != 200:
+            return "Could not fetch build logs"
+
+        events = response.json()
+
+        # Extract error messages from events
+        error_messages = []
+        for event in events:
+            if event.get('type') in ['stderr', 'error']:
+                payload = event.get('payload', {})
+                text = payload.get('text', '')
+                if text:
+                    error_messages.append(text)
+
+        if error_messages:
+            return '\n'.join(error_messages[-10:])  # Last 10 error messages
+        else:
+            return "Build failed but no error logs available"
+
+    except Exception as e:
+        return f"Error fetching logs: {str(e)}"

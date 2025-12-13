@@ -22,6 +22,5 @@ ENV PYTHONUNBUFFERED=1
 # Expose port
 EXPOSE 8080
 
-# Run with functions-framework
-CMD exec functions-framework --target=generate_site --port=$PORT
-# Force rebuild
+# Run Flask app with gunicorn
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app

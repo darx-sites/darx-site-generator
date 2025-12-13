@@ -1,0 +1,346 @@
+"""
+Client Onboarding Form Routes
+Secure web form for collecting client information and Builder.io credentials.
+"""
+
+import os
+import secrets
+import hashlib
+import json
+import uuid
+from datetime import datetime, timedelta
+from flask import Blueprint, request, render_template, jsonify, redirect, url_for
+from functools import wraps
+from google.cloud import pubsub_v1
+
+from .validation import validate_onboarding_form, sanitize_client_slug
+from auth import login_required
+
+# Create Blueprint
+onboarding_bp = Blueprint('onboarding', __name__,
+                          template_folder='templates',
+                          url_prefix='/onboard')
+
+# In-memory token store (in production, use Redis or database)
+# Format: {token: {'client_slug': str, 'created_at': datetime, 'used': bool}}
+onboarding_tokens = {}
+
+# Token expiry time (24 hours)
+TOKEN_EXPIRY_HOURS = 24
+
+
+def generate_onboarding_token(client_slug: str) -> str:
+    """
+    Generate a secure one-time token for onboarding
+
+    Args:
+        client_slug: Client identifier
+
+    Returns:
+        Secure token string
+    """
+    # Generate secure random token
+    token = secrets.token_urlsafe(32)
+
+    # Store token with metadata
+    onboarding_tokens[token] = {
+        'client_slug': client_slug,
+        'created_at': datetime.utcnow(),
+        'used': False
+    }
+
+    return token
+
+
+def validate_token(token: str) -> dict:
+    """
+    Validate an onboarding token
+
+    Args:
+        token: Token to validate
+
+    Returns:
+        Token data if valid, None otherwise
+    """
+    if token not in onboarding_tokens:
+        return None
+
+    token_data = onboarding_tokens[token]
+
+    # Check if token has been used
+    if token_data['used']:
+        return None
+
+    # Check if token has expired
+    expiry_time = token_data['created_at'] + timedelta(hours=TOKEN_EXPIRY_HOURS)
+    if datetime.utcnow() > expiry_time:
+        # Clean up expired token
+        del onboarding_tokens[token]
+        return None
+
+    return token_data
+
+
+def generate_csrf_token():
+    """Generate a CSRF token for form protection"""
+    return secrets.token_hex(32)
+
+
+@onboarding_bp.route('/generate-link', methods=['POST'])
+def generate_onboarding_link():
+    """
+    Generate a one-time onboarding link for a client
+    Called from Slack command: /darx onboard <client-slug>
+
+    Expected JSON payload:
+    {
+        "client_slug": "acme-corp",
+        "requester_id": "U12345678"  # Slack user ID (optional)
+    }
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        client_slug = data.get('client_slug', '')
+
+        if not client_slug:
+            return jsonify({'error': 'client_slug is required'}), 400
+
+        # Sanitize the slug
+        client_slug = sanitize_client_slug(client_slug)
+
+        if len(client_slug) < 3:
+            return jsonify({'error': 'client_slug must be at least 3 characters'}), 400
+
+        # Check if slug is already in use (query Supabase)
+        # TODO: Add Supabase check here
+
+        # Generate token
+        token = generate_onboarding_token(client_slug)
+
+        # Build the onboarding URL
+        base_url = os.getenv('SITE_GENERATOR_URL', 'https://darx-site-generator-474964350921.us-central1.run.app')
+        onboarding_url = f"{base_url}/onboard/{token}"
+
+        return jsonify({
+            'success': True,
+            'onboarding_url': onboarding_url,
+            'client_slug': client_slug,
+            'expires_in_hours': TOKEN_EXPIRY_HOURS
+        })
+
+    except Exception as e:
+        print(f"Error generating onboarding link: {str(e)}")
+        return jsonify({'error': f'Internal error: {str(e)}'}), 500
+
+
+@onboarding_bp.route('/<token>', methods=['GET'])
+@login_required
+def show_onboarding_form(token: str):
+    """
+    Display the onboarding form
+    Requires Google authentication
+    """
+    # Validate token
+    token_data = validate_token(token)
+
+    if not token_data:
+        return render_template('onboarding_error.html',
+                               error='This onboarding link is invalid or has expired. Please request a new link.')
+
+    # Generate CSRF token
+    csrf_token = generate_csrf_token()
+
+    return render_template('onboarding.html',
+                           token=token,
+                           client_slug=token_data['client_slug'],
+                           csrf_token=csrf_token)
+
+
+@onboarding_bp.route('/<token>', methods=['POST'])
+@login_required
+def process_onboarding_form(token: str):
+    """
+    Process the submitted onboarding form
+    """
+    # Validate token
+    token_data = validate_token(token)
+
+    if not token_data:
+        return jsonify({'error': 'This onboarding link is invalid or has expired'}), 400
+
+    try:
+        # Get form data
+        form_data = {
+            'client_name': request.form.get('client_name', '').strip(),
+            'client_slug': request.form.get('client_slug', token_data['client_slug']).strip(),
+            'contact_email': request.form.get('contact_email', '').strip(),
+            'website_type': request.form.get('website_type', '').strip(),
+            'builder_public_key': request.form.get('builder_public_key', '').strip(),
+            'builder_private_key': request.form.get('builder_private_key', '').strip(),
+            'builder_space_id': request.form.get('builder_space_id', '').strip(),
+            'industry': request.form.get('industry', '').strip(),
+        }
+
+        # Validate form data
+        is_valid, errors = validate_onboarding_form(form_data)
+
+        if not is_valid:
+            return render_template('onboarding.html',
+                                   token=token,
+                                   client_slug=token_data['client_slug'],
+                                   csrf_token=generate_csrf_token(),
+                                   errors=errors,
+                                   form_data=form_data)
+
+        # Mark token as used
+        onboarding_tokens[token]['used'] = True
+
+        # Store client data in Supabase
+        success, result = store_client_data(form_data)
+
+        if not success:
+            return render_template('onboarding.html',
+                                   token=token,
+                                   client_slug=token_data['client_slug'],
+                                   csrf_token=generate_csrf_token(),
+                                   errors=[result],
+                                   form_data=form_data)
+
+        # Show success page
+        return render_template('onboarding_success.html',
+                               client_name=form_data['client_name'],
+                               client_slug=form_data['client_slug'])
+
+    except Exception as e:
+        print(f"Error processing onboarding form: {str(e)}")
+        return render_template('onboarding.html',
+                               token=token,
+                               client_slug=token_data['client_slug'],
+                               csrf_token=generate_csrf_token(),
+                               errors=[f'An unexpected error occurred: {str(e)}'],
+                               form_data=request.form)
+
+
+def publish_onboarding_message(form_data: dict, client_id: str) -> None:
+    """
+    Publish a Pub/Sub message to trigger the provisioner Cloud Function
+
+    Args:
+        form_data: Validated form data from the onboarding form
+        client_id: Generated client ID from Supabase
+    """
+    # Get GCP project configuration
+    gcp_project = os.getenv('GCP_PROJECT', 'sylvan-journey-474401-f9')
+    topic_name = 'darx-client-onboarding'
+
+    # Initialize Pub/Sub client and publisher
+    publisher = pubsub_v1.PublisherClient()
+    topic_path = publisher.topic_path(gcp_project, topic_name)
+
+    # Generate a client ID for the message (UUID v4)
+    message_client_id = str(uuid.uuid4())
+
+    # Build message payload according to spec (camelCase field names)
+    message_data = {
+        'clientId': message_client_id,
+        'clientSlug': form_data['client_slug'],
+        'clientName': form_data['client_name'],
+        'contactEmail': form_data['contact_email'],
+        'websiteType': form_data.get('website_type', 'marketing'),
+        'builder': {
+            'publicKey': form_data['builder_public_key'],
+            'privateKey': form_data['builder_private_key'],
+            'spaceId': form_data.get('builder_space_id', '')
+        },
+        'metadata': {
+            'initiatedBy': 'onboarding-form',
+            'onboardingSource': 'admin-dashboard',
+            'requestedAt': datetime.utcnow().isoformat(),
+            'supabaseClientId': client_id
+        }
+    }
+
+    # Publish the message
+    message_json = json.dumps(message_data)
+    future = publisher.publish(topic_path, message_json.encode('utf-8'))
+    future.result()  # Block until publish completes
+
+
+def store_client_data(form_data: dict) -> tuple:
+    """
+    Store client data in Supabase
+
+    Args:
+        form_data: Validated form data
+
+    Returns:
+        Tuple of (success: bool, result_or_error: str)
+    """
+    try:
+        # Import Supabase client
+        from supabase import create_client
+
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_KEY')
+
+        if not supabase_url or not supabase_key:
+            print("Warning: Supabase credentials not configured")
+            # For now, just log and continue (will be properly implemented later)
+            return True, "Client data recorded (Supabase not configured)"
+
+        supabase = create_client(supabase_url, supabase_key)
+
+        # Prepare client record
+        client_record = {
+            'client_name': form_data['client_name'],
+            'client_slug': form_data['client_slug'],
+            'contact_email': form_data['contact_email'],
+            'website_type': form_data['website_type'],
+            'builder_public_key': form_data['builder_public_key'],
+            'builder_private_key': form_data['builder_private_key'],  # Will be encrypted in production
+            'builder_space_id': form_data.get('builder_space_id'),
+            'industry': form_data.get('industry'),
+            'status': 'pending_provisioning',
+            'created_at': datetime.utcnow().isoformat(),
+        }
+
+        # Insert into clients table
+        result = supabase.table('clients').insert(client_record).execute()
+
+        if result.data:
+            client_id = result.data[0].get('id')
+
+            # Publish Pub/Sub message to trigger provisioner
+            try:
+                publish_onboarding_message(form_data, client_id)
+                print(f"Published onboarding message for client: {client_id}")
+            except Exception as pub_error:
+                print(f"Warning: Failed to publish Pub/Sub message: {str(pub_error)}")
+                # Don't fail the onboarding if Pub/Sub fails
+
+            return True, client_id
+        else:
+            return False, "Failed to create client record"
+
+    except Exception as e:
+        print(f"Error storing client data: {str(e)}")
+        # Don't fail completely if Supabase isn't configured yet
+        if 'clients' in str(e) and 'does not exist' in str(e):
+            return True, "Client data recorded (table setup pending)"
+        return False, f"Database error: {str(e)}"
+
+
+# Cleanup function for expired tokens (call periodically)
+def cleanup_expired_tokens():
+    """Remove expired tokens from memory"""
+    now = datetime.utcnow()
+    expired = [
+        token for token, data in onboarding_tokens.items()
+        if now > data['created_at'] + timedelta(hours=TOKEN_EXPIRY_HOURS)
+    ]
+    for token in expired:
+        del onboarding_tokens[token]

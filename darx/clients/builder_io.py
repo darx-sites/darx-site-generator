@@ -12,13 +12,13 @@ BUILDER_PRIVATE_KEY = os.getenv('BUILDER_IO_PRIVATE_KEY')
 BUILDER_API_URL = 'https://builder.io/api/v1'
 
 
-def create_space(project_name: str, company_name: str = None) -> Dict[str, Any]:
+def create_space(project_name: str, client_name: str = None) -> Dict[str, Any]:
     """
     Create a new Builder.io space for a client.
 
     Args:
         project_name: Project identifier (e.g., 'acme-corp')
-        company_name: Client company name
+        client_name: Client name
 
     Returns:
         {
@@ -43,7 +43,7 @@ def create_space(project_name: str, company_name: str = None) -> Dict[str, Any]:
             'Content-Type': 'application/json'
         }
 
-        space_name = company_name or project_name.replace('-', ' ').title()
+        space_name = client_name or project_name.replace('-', ' ').title()
 
         payload = {
             'name': space_name,

@@ -7,24 +7,48 @@ Generates production-ready Next.js websites with Builder.io integration.
 import os
 import json
 import time
-import functions_framework
-from flask import Request, jsonify
+import requests
+import secrets
+from flask import Flask, request, jsonify
+from flask_session import Session
 from typing import Dict, Any
 from darx.clients.vertex_ai import generate_site_code
 from darx.clients.github import create_github_repo, push_to_github
 from darx.clients.vercel import deploy_to_vercel
-from darx.clients.builder_io import create_space, register_components, create_initial_page
 from darx.clients.site_editor import edit_site
 from darx.clients.gcp import store_backup, log_generation
+from onboarding import onboarding_bp
+from auth import init_oauth
+from auth_routes import auth_bp, init_auth_routes
 
 # Configuration
 PROJECT_ID = os.getenv('GCP_PROJECT', 'sylvan-journey-474401-f9')
 LOCATION = os.getenv('GCP_LOCATION', 'us-central1')
 GITHUB_ORG = os.getenv('GITHUB_ORG', 'darx-sites')
+DARX_REASONING_URL = os.getenv('DARX_REASONING_URL', 'https://darx-reasoning-474964350921.us-central1.run.app')
+
+# Create Flask app
+app = Flask(__name__)
+
+# Session configuration
+app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_COOKIE_SECURE'] = True  # Require HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+Session(app)
+
+# Initialize OAuth
+oauth, google = init_oauth(app)
+init_auth_routes(google)
+
+# Register blueprints
+app.register_blueprint(auth_bp)
+app.register_blueprint(onboarding_bp)
 
 
-@functions_framework.http
-def generate_site(request: Request):
+@app.route('/', methods=['POST', 'OPTIONS'])
+def generate_site():
     """
     Main HTTP endpoint for website generation.
 
@@ -34,7 +58,8 @@ def generate_site(request: Request):
         "client_info": {...},
         "requirements": "Build a landing page...",
         "industry": "real-estate",
-        "features": ["spline-3d", "hubspot-form"]
+        "features": ["spline-3d", "hubspot-form"],
+        "builder_space_public_key": "pub-..." (optional - use existing Builder.io Space)
     }
 
     Returns:
@@ -62,6 +87,7 @@ def generate_site(request: Request):
         requirements = data.get('requirements')
         industry = data.get('industry', 'general')
         features = data.get('features', [])
+        builder_space_public_key = data.get('builder_space_public_key')  # Optional: use existing Builder.io Space
 
         if not project_name or not requirements:
             return jsonify({
@@ -102,7 +128,7 @@ def generate_site(request: Request):
         github_result = create_github_repo(
             org=GITHUB_ORG,
             repo_name=project_name,
-            description=f"Website for {client_info.get('company_name', project_name)}"
+            description=f"Website for {client_info.get('client_name', project_name)}"
         )
 
         if not github_result.get('success'):
@@ -125,7 +151,7 @@ def generate_site(request: Request):
 
         print("   ✅ Code pushed to GitHub")
 
-        # Step 4: Deploy to Vercel
+        # Step 4: Deploy to Vercel (initial deployment - Builder.io keys added later)
         print("\n🚀 Deploying to Vercel...")
         vercel_result = deploy_to_vercel(
             project_name=project_name,
@@ -142,36 +168,56 @@ def generate_site(request: Request):
         staging_url = vercel_result['staging_url']
         print(f"   ✅ Deployed to: {staging_url}")
 
-        # Step 5: Create Builder.io space and register components
+        # Step 5: Configure Builder.io visual editor
         print("\n🎨 Setting up Builder.io visual editor...")
-        builder_result = create_space(
-            project_name=project_name,
-            company_name=client_info.get('company_name')
-        )
+        builder_space_id = project_name  # Default fallback
+        builder_public_key = None
+        builder_private_key = None
+        builder_space_url = None
 
-        builder_space_id = project_name  # Default to project_name
-        if builder_result.get('success'):
-            builder_space_id = builder_result.get('space_id', project_name)
-            print(f"   ✅ Builder.io space created: {builder_space_id}")
-
-            # Register custom components
-            if components:
-                register_result = register_components(
-                    space_id=builder_space_id,
-                    components=components,
-                    staging_url=staging_url
-                )
-                if register_result.get('success'):
-                    print(f"   ✅ Registered {register_result.get('registered', 0)} components")
-
-            # Create initial page entry
-            create_initial_page(
-                space_id=builder_space_id,
-                project_name=project_name
-            )
+        if builder_space_public_key:
+            # User provided an existing Builder.io Space key - use it directly
+            print(f"   ✅ Using existing Builder.io Space")
+            print(f"   ℹ️  Public key: {builder_space_public_key[:20]}...")
+            builder_public_key = builder_space_public_key
+            builder_space_id = project_name
+            builder_space_url = f"https://builder.io/content"
+            print(f"   ℹ️  Visual editing will be available with your existing Space")
         else:
-            print(f"   ⚠️  Builder.io setup skipped: {builder_result.get('error')}")
-            print(f"   ℹ️  Site will still work, but visual editing won't be available")
+            # No key provided - attempt to create a new Space (requires Enterprise account)
+            try:
+                from darx.clients.builderio_space import create_space
+
+                space_name = client_info.get('client_name') or project_name.replace('-', ' ').title()
+
+                builder_result = create_space(
+                    space_name=space_name,
+                    vercel_project_id=vercel_result.get('vercel_project_id')
+                )
+
+                if builder_result.get('success'):
+                    builder_space_id = builder_result.get('space_id', project_name)
+                    builder_public_key = builder_result.get('public_key')
+                    builder_private_key = builder_result.get('private_key')
+                    builder_space_url = builder_result.get('space_url')
+
+                    print(f"   ✅ Builder.io space created: {builder_space_id}")
+                    print(f"   ℹ️  Public key: {builder_public_key}")
+                    print(f"   ℹ️  Space URL: {builder_space_url}")
+                else:
+                    error_msg = builder_result.get('error', 'Unknown error')
+                    print(f"   ⚠️  Builder.io Space creation failed: {error_msg}")
+                    # Check if this is the Enterprise limitation
+                    if '401' in error_msg or 'Invalid key' in error_msg or 'Unauthorized' in error_msg:
+                        print(f"   ℹ️  NOTE: Programmatic Space creation requires a Builder.io Enterprise account.")
+                        print(f"   ℹ️  To enable visual editing, create a Space at builder.io and provide the public key.")
+                        print(f"   ℹ️  Pass 'builder_space_public_key' parameter with your Space's public key (starts with 'pub-').")
+                    print(f"   ℹ️  Site will still work, but visual editing won't be available")
+
+            except Exception as e:
+                print(f"   ⚠️  Builder.io setup failed: {str(e)}")
+                print(f"   ℹ️  To enable visual editing, create a Space at builder.io and provide the public key.")
+                print(f"   ℹ️  Site will still work, but visual editing won't be available")
 
         # Step 6: Store backup in GCS
         print("\n💾 Storing backup in Cloud Storage...")
@@ -194,7 +240,9 @@ def generate_site(request: Request):
             components=len(components),
             files=len(files),
             generation_time=generation_time,
-            success=True
+            success=True,
+            deployment_url=vercel_result.get('staging_url'),
+            build_state=vercel_result.get('build_state')
         )
 
         print(f"\n✨ Generation complete! ({generation_time:.2f}s)")
@@ -218,6 +266,16 @@ def generate_site(request: Request):
         error_msg = str(e)
         print(f"\n❌ Generation failed: {error_msg}")
 
+        # Extract build logs from Vercel deployment failures
+        build_logs = None
+        build_state = None
+        if "Build logs:" in error_msg:
+            # Split error message to extract build logs
+            parts = error_msg.split("Build logs:")
+            if len(parts) > 1:
+                build_logs = parts[1].strip()
+                build_state = "ERROR"
+
         # Log failure
         log_generation(
             project_name=project_name,
@@ -226,7 +284,9 @@ def generate_site(request: Request):
             files=0,
             generation_time=time.time() - start_time,
             success=False,
-            error=error_msg
+            error=error_msg,
+            build_state=build_state,
+            build_logs=build_logs
         )
 
         return jsonify({
@@ -236,14 +296,14 @@ def generate_site(request: Request):
         }), 500
 
 
-@functions_framework.http
-def health(request: Request):
+@app.route('/health', methods=['GET'])
+def health():
     """Health check endpoint"""
     return jsonify({'status': 'healthy', 'service': 'darx-site-generator'}), 200
 
 
-@functions_framework.http
-def edit(request: Request):
+@app.route('/edit', methods=['POST', 'OPTIONS'])
+def edit():
     """
     HTTP endpoint for editing existing DARX Sites.
 
@@ -276,17 +336,22 @@ def edit(request: Request):
         if not data:
             return jsonify({'error': 'No JSON data provided'}), 400
 
+        # Log received data for debugging
+        print(f"\n📥 Received edit request data: {json.dumps(data, indent=2)}")
+
         project_name = data.get('project_name')
         edit_type = data.get('edit_type')
         changes = data.get('changes', {})
 
         if not project_name or not edit_type:
-            return jsonify({
-                'error': 'Missing required fields: project_name, edit_type'
-            }), 400
+            error_msg = f'Missing required fields: project_name={repr(project_name)}, edit_type={repr(edit_type)}'
+            print(f"❌ Validation error: {error_msg}")
+            return jsonify({'error': error_msg}), 400
 
     except Exception as e:
-        return jsonify({'error': f'Invalid request: {str(e)}'}), 400
+        error_msg = f'Invalid request: {str(e)}'
+        print(f"❌ Request parsing error: {error_msg}")
+        return jsonify({'error': error_msg}), 400
 
     print(f"\n✏️  Edit request for: {project_name} ({edit_type})")
 
@@ -331,3 +396,7 @@ def _cors_response():
         'Access-Control-Max-Age': '3600'
     }
     return ('', 204, headers)
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8080)))

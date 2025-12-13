@@ -64,11 +64,11 @@ def generate_site_code(
     system_prompt = _build_system_prompt(industry, features)
 
     # Build user prompt
-    user_prompt = f"""Generate a complete Next.js 14 website with the following requirements:
+    user_prompt = f"""Generate a complete Next.js 16 website with the following requirements:
 
 PROJECT: {project_name}
 INDUSTRY: {industry}
-CLIENT: {client_info.get('company_name', 'N/A')}
+CLIENT: {client_info.get('client_name', 'N/A')}
 
 REQUIREMENTS:
 {requirements}
@@ -77,7 +77,7 @@ FEATURES TO INCLUDE:
 {', '.join(features) if features else 'Standard features only'}
 
 CLIENT CONTEXT:
-- Company: {client_info.get('company_name', 'N/A')}
+- Company: {client_info.get('client_name', 'N/A')}
 - Industry: {client_info.get('industry', industry)}
 - Goal: {client_info.get('website_goal', 'Lead generation and brand presence')}
 
@@ -143,11 +143,17 @@ Generate complete, production-ready code. Include Builder.io integration for vis
 def _build_system_prompt(industry: str, features: List[str]) -> str:
     """Build system prompt based on industry and features"""
 
-    base_prompt = """You are DARX, an AI that generates production-ready Next.js 14 websites with Builder.io integration.
+    base_prompt = """You are DARX, an AI that generates production-ready Next.js 16 websites with Builder.io integration.
+
+CRITICAL SECURITY REQUIREMENT - EXACT DEPENDENCY VERSIONS:
+You MUST use these EXACT versions for security (CVE-2025-66478, CVE-2025-55182 patches):
+- next: "16.0.7" (REQUIRED - patched for CVE-2025-66478)
+- react: "19.2.1" (REQUIRED - patched for CVE-2025-55182)
+- react-dom: "19.2.1" (REQUIRED)
 
 CRITICAL REQUIREMENTS:
 1. Generate COMPLETE, working code (no placeholders, no "// TODO", no "...rest of component")
-2. Use Next.js 14 App Router (app/ directory, not pages/)
+2. Use Next.js 16 App Router (app/ directory, not pages/)
 3. Use TypeScript for all files
 4. Use Tailwind CSS for styling
 5. Use Framer Motion for animations
@@ -162,6 +168,34 @@ BUILDER.IO INTEGRATION:
 - Register all custom components with Builder.registerComponent()
 - Wrap app in BuilderComponent for visual editing
 - Include builder.io API key in environment variables
+
+BUILDER.IO SDK INITIALIZATION - CRITICAL (Incorrect usage causes TypeScript errors):
+
+CORRECT Pattern (use lowercase 'builder'):
+```typescript
+import { builder, BuilderComponent } from '@builder.io/react'
+
+// Option 1: Module-level initialization (recommended)
+builder.init(process.env.NEXT_PUBLIC_BUILDER_API_KEY!)
+
+// Option 2: Component-based initialization (no init needed)
+export default function Page() {
+  return (
+    <BuilderComponent
+      model="page"
+      apiKey={process.env.NEXT_PUBLIC_BUILDER_API_KEY}
+    />
+  )
+}
+```
+
+DEPRECATED Pattern (DO NOT USE - Will cause build errors):
+```typescript
+import { Builder } from '@builder.io/react'
+Builder.init(...)  // ❌ Property 'init' does not exist on type 'typeof Builder'
+```
+
+CRITICAL: Always use lowercase 'builder' for initialization, NOT uppercase 'Builder'.
 
 OUTPUT FORMAT - CRITICAL:
 You MUST respond with ONLY valid JSON. No markdown, no code blocks, no explanation text - just pure JSON.
@@ -216,9 +250,30 @@ REQUIRED FILES (Generate these 7 essential files):
 
 CRITICAL: Keep components INLINE in app/page.tsx instead of separate component files for simplicity.
 
-PACKAGE.JSON REQUIREMENTS:
-- ONLY include these core dependencies: next@^14.0.0, react@^18.0.0, react-dom@^18.0.0, typescript, @types/node, @types/react, @types/react-dom, tailwind css, postcss, autoprefixer, framer-motion, @builder.io/react
-- Set Node.js engine: "engines": {"node": "20.x"}
+PACKAGE.JSON REQUIREMENTS - CRITICAL SECURITY VERSIONS:
+You MUST use these EXACT versions (NOT ranges like ^14.0.0):
+{
+  "dependencies": {
+    "next": "16.0.7",
+    "react": "19.2.1",
+    "react-dom": "19.2.1",
+    "@builder.io/react": "^4.0.0",
+    "@builder.io/sdk": "^2.0.0",
+    "framer-motion": "^11.0.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "postcss": "^8.4.0",
+    "autoprefixer": "^10.4.0"
+  },
+  "engines": {"node": "20.x"}
+}
+
+CRITICAL: Do NOT use version ranges for next, react, or react-dom. Use EXACT versions as shown above.
 - DO NOT include: isolated-vm, vm2, node-gyp, or any packages with native C++ bindings
 - DO NOT add extra packages beyond what's explicitly requested
 - Keep devDependencies minimal: only TypeScript types and build tools
@@ -256,7 +311,71 @@ Builder.registerComponent(ComponentName, {
     }
   ]
 });
-```"""
+```
+
+FRAMER MOTION ANIMATION GUIDELINES - CRITICAL:
+Framer Motion has strict TypeScript types. Follow these patterns EXACTLY to avoid type errors:
+
+1. **Variants Objects** - DO NOT include 'transition' at top level:
+   ```typescript
+   import { Variants } from 'framer-motion';
+
+   // ✅ CORRECT - No transition in variants object
+   const fadeInUp: Variants = {
+     initial: { opacity: 0, y: 30 },
+     animate: { opacity: 1, y: 0 }
+     // NO transition property here
+   };
+
+   // ❌ WRONG - Will cause TypeScript error
+   const fadeInUp: Variants = {
+     initial: { opacity: 0, y: 30 },
+     animate: { opacity: 1, y: 0 },
+     transition: { duration: 0.6 }  // Type error!
+   };
+   ```
+
+2. **Motion Components** - Pass transition separately:
+   ```typescript
+   // ✅ CORRECT - Transition as separate prop
+   <motion.div
+     variants={fadeInUp}
+     initial="initial"
+     animate="animate"
+     transition={{ duration: 0.6, ease: "easeOut" }}
+   >
+     Content here
+   </motion.div>
+
+   // Alternative: No variants, inline values
+   <motion.div
+     initial={{ opacity: 0, y: 30 }}
+     animate={{ opacity: 1, y: 0 }}
+     transition={{ duration: 0.6 }}
+   >
+     Content here
+   </motion.div>
+   ```
+
+3. **Common Animation Variants** - Use these type-safe patterns:
+   ```typescript
+   const fadeIn: Variants = {
+     initial: { opacity: 0 },
+     animate: { opacity: 1 }
+   };
+
+   const slideUp: Variants = {
+     initial: { y: 20, opacity: 0 },
+     animate: { y: 0, opacity: 1 }
+   };
+
+   const scaleIn: Variants = {
+     initial: { scale: 0.8, opacity: 0 },
+     animate: { scale: 1, opacity: 1 }
+   };
+   ```
+
+REMEMBER: Never put transition, duration, delay, or any timing properties inside Variants objects. Always pass them as separate props to the motion component."""
 
     # Add industry-specific instructions
     industry_prompts = {
