@@ -27,8 +27,8 @@ def init_auth_routes(google_oauth):
 @auth_bp.route('/login')
 def login():
     """Redirect to Google Sign-In"""
-    # Build redirect URI
-    redirect_uri = url_for('auth.callback', _external=True)
+    # Build redirect URI (force HTTPS for Cloud Run)
+    redirect_uri = url_for('auth.callback', _external=True, _scheme='https')
     return google.authorize_redirect(redirect_uri)
 
 
