@@ -55,13 +55,16 @@ def validate_onboarding_form(data: Dict) -> Tuple[bool, List[str]]:
     if website_type and website_type not in valid_website_types:
         errors.append(f'Website Type must be one of: {", ".join(valid_website_types)}')
 
-    # Builder.io public key validation
+    # Builder.io public key validation (accept both legacy and new formats)
     builder_public_key = data.get('builder_public_key', '')
     if builder_public_key:
-        if not builder_public_key.startswith('pub-'):
-            errors.append('Builder.io Public Key must start with "pub-"')
-        elif len(builder_public_key) < 20:
+        # Accept both legacy keys (alphanumeric) and new keys (pub-*)
+        # Legacy keys are typically 32-40 characters, new keys start with "pub-"
+        if len(builder_public_key) < 20:
             errors.append('Builder.io Public Key appears to be invalid (too short)')
+        # Validate format: either starts with "pub-" or is alphanumeric (legacy)
+        elif not (builder_public_key.startswith('pub-') or re.match(r'^[a-zA-Z0-9]+$', builder_public_key)):
+            errors.append('Builder.io Public Key must be either a legacy key (alphanumeric) or start with "pub-"')
 
     # Builder.io private key validation
     builder_private_key = data.get('builder_private_key', '')
