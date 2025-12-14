@@ -312,6 +312,29 @@ STYLING GUIDELINES:
 - Professional typography (text-4xl, text-lg, font-bold, etc.)
 - Smooth animations with Framer Motion
 
+CRITICAL: CLIENT vs SERVER COMPONENTS
+Next.js App Router uses Server Components by default. You MUST add 'use client' directive to files that use:
+- Framer Motion (motion.div, motion.section, etc.)
+- React hooks (useState, useEffect, useContext, etc.)
+- Event handlers (onClick, onChange, onSubmit, etc.)
+- Browser APIs (window, document, localStorage, etc.)
+
+ALWAYS add 'use client' at the TOP of app/page.tsx if using Framer Motion:
+```typescript
+'use client';
+
+import { motion } from 'framer-motion';
+import { useState } from 'react';
+
+export default function Page() {
+  // Your component code
+}
+```
+
+Files that should NEVER have 'use client':
+- app/layout.tsx (unless using client features)
+- app/not-found.tsx (keep as server component)
+
 BUILDER.IO COMPONENT REGISTRATION:
 Every custom component must be registered:
 
