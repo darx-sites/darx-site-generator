@@ -269,76 +269,45 @@ export default function NotFound() {
 ```
 
 BUILDER.IO INTEGRATION FILE TEMPLATE - lib/builder.ts:
-This file MUST register ALL inline components from app/page.tsx so they appear in Builder.io's visual editor.
+This file initializes Builder.io. Keep it SIMPLE - just import and export.
 ```typescript
+'use client';
+
 import { Builder } from '@builder.io/react';
 
-// Initialize Builder.io with API key (will be set via environment variable)
-// Note: The actual initialization happens when BuilderComponent is used
-
-// Example: Register a Hero component
-// If you have a Hero section in app/page.tsx, register it like this:
-Builder.registerComponent(
-  // Component function would go here, but since components are inline in page.tsx,
-  // you can create wrapper components or register the entire page
-  function Hero({ title, subtitle, ctaText }: { title: string; subtitle: string; ctaText: string }) {
-    return (
-      <section className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-        <div className="text-center px-6">
-          <h1 className="text-5xl font-bold text-gray-900 mb-6">{title}</h1>
-          <p className="text-xl text-gray-600 mb-8">{subtitle}</p>
-          <button className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-            {ctaText}
-          </button>
-        </div>
-      </section>
-    );
-  },
-  {
-    name: 'Hero',
-    inputs: [
-      {
-        name: 'title',
-        type: 'string',
-        defaultValue: 'Welcome to Our Site'
-      },
-      {
-        name: 'subtitle',
-        type: 'string',
-        defaultValue: 'Build amazing experiences'
-      },
-      {
-        name: 'ctaText',
-        type: 'string',
-        defaultValue: 'Get Started'
-      }
-    ]
-  }
-);
-
-// Register other components following the same pattern
-// For Features, Testimonials, CTA sections, etc.
+// Builder.io is initialized automatically when BuilderComponent is used
+// This file ensures the Builder SDK is loaded and available
+// Component registration can be added here in the future
 
 export { Builder };
 ```
 
-IMPORTANT: In lib/builder.ts, you MUST:
-1. Import Builder from '@builder.io/react'
-2. Create and register wrapper components for each major section (Hero, Features, CTA, etc.)
-3. Define inputs for each component so they can be edited in Builder.io
-4. Export Builder at the end
+CRITICAL: lib/builder.ts MUST be simple:
+1. Add 'use client' directive at the top
+2. Import Builder from '@builder.io/react'
+3. Export Builder
+4. DO NOT try to register components yet - keep it minimal for now
+5. Future enhancement: component registration can be added later
 
 ENVIRONMENT VARIABLES:
 Make sure to document that NEXT_PUBLIC_BUILDER_API_KEY must be set in .env.local or Vercel environment variables.
 
 CRITICAL: IMPORT lib/builder.ts IN app/layout.tsx
-To ensure Builder.io components are registered on app startup, add this import to app/layout.tsx:
+To ensure Builder.io SDK is loaded, add this import to app/layout.tsx:
 ```typescript
-// Import Builder.io component registrations
+// Import Builder.io SDK initialization
 import '@/lib/builder';
 ```
-This import should be at the TOP of app/layout.tsx, before the component definition.
-Without this import, the component registrations in lib/builder.ts will never execute!
+This import should be at the TOP of app/layout.tsx, after other imports but before the component definition.
+Example:
+```typescript
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+import '@/lib/builder'; // <-- Add this line
+
+const inter = Inter({ subsets: ['latin'] });
+```
 
 PACKAGE.JSON REQUIREMENTS - CRITICAL SECURITY VERSIONS:
 You MUST use these EXACT versions (NOT ranges like ^14.0.0):
