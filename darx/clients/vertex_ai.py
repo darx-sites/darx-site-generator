@@ -116,7 +116,7 @@ Generate complete, production-ready code. Include Builder.io integration for vis
 
         # CRITICAL: Validate that all required files were generated
         file_paths = [f.get('path', '') for f in files]
-        required_files = ['app/page.tsx', 'app/layout.tsx', 'app/not-found.tsx', 'package.json', 'vercel.json']
+        required_files = ['app/page.tsx', 'app/layout.tsx', 'app/not-found.tsx', 'lib/builder.ts', 'package.json', 'vercel.json']
         missing_files = [f for f in required_files if f not in file_paths]
 
         if missing_files:
@@ -239,15 +239,16 @@ WRONG - DO NOT DO THIS:
   ]
 }
 
-REQUIRED FILES (Generate these 8 essential files):
-1. package.json - Dependencies (Next.js 14, React 18, TypeScript, Tailwind, Framer Motion)
+REQUIRED FILES (Generate these 9 essential files):
+1. package.json - Dependencies (Next.js 14, React 18, TypeScript, Tailwind, Framer Motion, Builder.io)
 2. vercel.json - Vercel deployment configuration (Node.js version, build settings)
 3. app/layout.tsx - Root layout with metadata
 4. app/page.tsx - Home page with ALL components inline (Hero, Features, CTA sections all in one file)
 5. app/not-found.tsx - 404 error page (REQUIRED by Next.js App Router)
-6. app/globals.css - Tailwind directives
-7. tailwind.config.ts - Tailwind configuration
-8. next.config.js - Next.js configuration
+6. lib/builder.ts - Builder.io initialization and component registration (REQUIRED for Builder.io integration)
+7. app/globals.css - Tailwind directives
+8. tailwind.config.ts - Tailwind configuration
+9. next.config.js - Next.js configuration
 
 CRITICAL: Keep components INLINE in app/page.tsx instead of separate component files for simplicity.
 
@@ -266,6 +267,78 @@ export default function NotFound() {
   );
 }
 ```
+
+BUILDER.IO INTEGRATION FILE TEMPLATE - lib/builder.ts:
+This file MUST register ALL inline components from app/page.tsx so they appear in Builder.io's visual editor.
+```typescript
+import { Builder } from '@builder.io/react';
+
+// Initialize Builder.io with API key (will be set via environment variable)
+// Note: The actual initialization happens when BuilderComponent is used
+
+// Example: Register a Hero component
+// If you have a Hero section in app/page.tsx, register it like this:
+Builder.registerComponent(
+  // Component function would go here, but since components are inline in page.tsx,
+  // you can create wrapper components or register the entire page
+  function Hero({ title, subtitle, ctaText }: { title: string; subtitle: string; ctaText: string }) {
+    return (
+      <section className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="text-center px-6">
+          <h1 className="text-5xl font-bold text-gray-900 mb-6">{title}</h1>
+          <p className="text-xl text-gray-600 mb-8">{subtitle}</p>
+          <button className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            {ctaText}
+          </button>
+        </div>
+      </section>
+    );
+  },
+  {
+    name: 'Hero',
+    inputs: [
+      {
+        name: 'title',
+        type: 'string',
+        defaultValue: 'Welcome to Our Site'
+      },
+      {
+        name: 'subtitle',
+        type: 'string',
+        defaultValue: 'Build amazing experiences'
+      },
+      {
+        name: 'ctaText',
+        type: 'string',
+        defaultValue: 'Get Started'
+      }
+    ]
+  }
+);
+
+// Register other components following the same pattern
+// For Features, Testimonials, CTA sections, etc.
+
+export { Builder };
+```
+
+IMPORTANT: In lib/builder.ts, you MUST:
+1. Import Builder from '@builder.io/react'
+2. Create and register wrapper components for each major section (Hero, Features, CTA, etc.)
+3. Define inputs for each component so they can be edited in Builder.io
+4. Export Builder at the end
+
+ENVIRONMENT VARIABLES:
+Make sure to document that NEXT_PUBLIC_BUILDER_API_KEY must be set in .env.local or Vercel environment variables.
+
+CRITICAL: IMPORT lib/builder.ts IN app/layout.tsx
+To ensure Builder.io components are registered on app startup, add this import to app/layout.tsx:
+```typescript
+// Import Builder.io component registrations
+import '@/lib/builder';
+```
+This import should be at the TOP of app/layout.tsx, before the component definition.
+Without this import, the component registrations in lib/builder.ts will never execute!
 
 PACKAGE.JSON REQUIREMENTS - CRITICAL SECURITY VERSIONS:
 You MUST use these EXACT versions (NOT ranges like ^14.0.0):
