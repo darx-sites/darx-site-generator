@@ -294,22 +294,23 @@ def store_client_data(form_data: dict) -> tuple:
 
         supabase = create_client(supabase_url, supabase_key)
 
-        # Prepare client record
-        client_record = {
+        # Prepare client onboarding record
+        onboarding_record = {
             'client_name': form_data['client_name'],
             'client_slug': form_data['client_slug'],
             'contact_email': form_data['contact_email'],
-            'website_type': form_data['website_type'],
-            'builder_public_key': form_data['builder_public_key'],
-            'builder_private_key': form_data['builder_private_key'],  # Will be encrypted in production
-            'builder_space_id': form_data.get('builder_space_id'),
             'industry': form_data.get('industry'),
+            'builder_public_key': form_data['builder_public_key'],
+            'builder_private_key': form_data['builder_private_key'],
+            'onboarding_form_data': {
+                'website_type': form_data['website_type'],
+                'builder_space_id': form_data.get('builder_space_id'),
+            },
             'status': 'pending_provisioning',
-            'created_at': datetime.utcnow().isoformat(),
         }
 
-        # Insert into clients table
-        result = supabase.table('clients').insert(client_record).execute()
+        # Insert into client_onboarding table (the correct table for onboarding submissions)
+        result = supabase.table('client_onboarding').insert(onboarding_record).execute()
 
         if result.data:
             client_id = result.data[0].get('id')
