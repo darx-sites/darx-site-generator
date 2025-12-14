@@ -299,6 +299,97 @@ import '@/lib/builder'; // <-- Add this line
 const inter = Inter({ subsets: ['latin'] });
 ```
 
+BUILDER.IO CATCH-ALL ROUTE - CRITICAL FOR VISUAL EDITOR:
+You MUST create app/[[...page]]/page.tsx to enable Builder.io visual editor preview.
+This route fetches and renders all Builder.io pages.
+
+```typescript
+'use client';
+
+import { BuilderComponent, builder, useIsPreviewing } from '@builder.io/react';
+import { useEffect, useState } from 'react';
+
+// Initialize Builder with your public API key
+builder.init(process.env.NEXT_PUBLIC_BUILDER_API_KEY || '');
+
+interface PageProps {
+  params: {
+    page?: string[];
+  };
+}
+
+export default function Page({ params }: PageProps) {
+  const [content, setContent] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const isPreviewing = useIsPreviewing();
+
+  // Get the URL path from params
+  const urlPath = params.page ? `/${params.page.join('/')}` : '/';
+
+  useEffect(() => {
+    async function fetchContent() {
+      try {
+        const content = await builder
+          .get('page', {
+            url: urlPath,
+            options: {
+              includeRefs: true,
+            },
+          })
+          .promise();
+
+        setContent(content);
+      } catch (error) {
+        console.error('Error fetching Builder.io content:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchContent();
+  }, [urlPath]);
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    );
+  }
+
+  // If no content found and not previewing, show 404
+  if (!content && !isPreviewing) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <h1 className="text-4xl font-bold text-gray-900 mb-4">404</h1>
+        <p className="text-gray-600">Page not found</p>
+      </div>
+    );
+  }
+
+  // Render the Builder.io content
+  return (
+    <BuilderComponent
+      model="page"
+      content={content}
+    />
+  );
+}
+```
+
+CRITICAL: The catch-all route at app/[[...page]]/page.tsx is REQUIRED:
+1. It must use double square brackets [[...page]] to include the root path (/)
+2. It fetches content from Builder.io using the URL path
+3. It renders content using BuilderComponent
+4. It shows a loading state while fetching
+5. It shows 404 for non-existent pages (unless in preview mode)
+
+This route enables:
+- Builder.io visual editor preview
+- Client can edit pages in Builder.io UI
+- Changes in Builder.io appear on the live site immediately
+
 PACKAGE.JSON REQUIREMENTS - CRITICAL SECURITY VERSIONS:
 You MUST use these EXACT versions (NOT ranges like ^14.0.0):
 {
@@ -345,6 +436,24 @@ STYLING GUIDELINES:
 - Generous spacing (p-8, py-16, etc.)
 - Professional typography (text-4xl, text-lg, font-bold, etc.)
 - Smooth animations with Framer Motion
+
+GLOBALS.CSS TEMPLATE (use this EXACT structure):
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-white text-gray-900;
+  }
+}
+```
+
+CRITICAL:
+- DO NOT use @apply with CSS variables (e.g., border-border, bg-background)
+- Keep globals.css minimal - only Tailwind directives and basic body styles
+- Use Tailwind utility classes directly in components instead of @apply
 
 CRITICAL: CLIENT vs SERVER COMPONENTS
 Next.js App Router uses Server Components by default. You MUST add 'use client' directive to files that use:
