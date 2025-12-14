@@ -114,9 +114,9 @@ Generate complete, production-ready code. Include Builder.io integration for vis
 
         print(f"   ✅ Generated {len(files)} files, {len(components)} components")
 
-        # CRITICAL: Validate that app/page.tsx was generated
+        # CRITICAL: Validate that all required files were generated
         file_paths = [f.get('path', '') for f in files]
-        required_files = ['app/page.tsx', 'app/layout.tsx', 'package.json', 'vercel.json']
+        required_files = ['app/page.tsx', 'app/layout.tsx', 'app/not-found.tsx', 'package.json', 'vercel.json']
         missing_files = [f for f in required_files if f not in file_paths]
 
         if missing_files:
@@ -239,16 +239,33 @@ WRONG - DO NOT DO THIS:
   ]
 }
 
-REQUIRED FILES (Generate these 7 essential files):
+REQUIRED FILES (Generate these 8 essential files):
 1. package.json - Dependencies (Next.js 14, React 18, TypeScript, Tailwind, Framer Motion)
 2. vercel.json - Vercel deployment configuration (Node.js version, build settings)
 3. app/layout.tsx - Root layout with metadata
 4. app/page.tsx - Home page with ALL components inline (Hero, Features, CTA sections all in one file)
-5. app/globals.css - Tailwind directives
-6. tailwind.config.ts - Tailwind configuration
-7. next.config.js - Next.js configuration
+5. app/not-found.tsx - 404 error page (REQUIRED by Next.js App Router)
+6. app/globals.css - Tailwind directives
+7. tailwind.config.ts - Tailwind configuration
+8. next.config.js - Next.js configuration
 
 CRITICAL: Keep components INLINE in app/page.tsx instead of separate component files for simplicity.
+
+NOT-FOUND PAGE TEMPLATE:
+app/not-found.tsx must be a simple 404 page:
+```typescript
+export default function NotFound() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="text-center">
+        <h1 className="text-6xl font-bold text-gray-900 mb-4">404</h1>
+        <p className="text-xl text-gray-600 mb-8">Page not found</p>
+        <a href="/" className="text-blue-600 hover:text-blue-700">Return home</a>
+      </div>
+    </div>
+  );
+}
+```
 
 PACKAGE.JSON REQUIREMENTS - CRITICAL SECURITY VERSIONS:
 You MUST use these EXACT versions (NOT ranges like ^14.0.0):
