@@ -148,9 +148,17 @@ def _set_env_vars(project_id: str, env_vars: Dict[str, str], headers: Dict):
         url += f"?teamId={VERCEL_TEAM_ID}"
 
     for key, value in env_vars.items():
+        # Skip None values - Vercel API requires string values
+        if value is None:
+            print(f"   ⚠️  Skipping env var {key}: value is None")
+            continue
+
+        # Convert to string to ensure API compatibility
+        value_str = str(value)
+
         payload = {
             "key": key,
-            "value": value,
+            "value": value_str,
             "type": "encrypted",
             "target": ["production", "preview", "development"]
         }
@@ -158,7 +166,7 @@ def _set_env_vars(project_id: str, env_vars: Dict[str, str], headers: Dict):
         response = requests.post(url, headers=headers, json=payload)
 
         if response.status_code not in (200, 201):
-            print(f"Warning: Failed to set env var {key}: {response.text}")
+            print(f"   ⚠️  Failed to set env var {key}: {response.text}")
 
 
 def _trigger_deployment(project_id: str, github_repo: str, repo_id: int, headers: Dict) -> Dict:
@@ -176,7 +184,7 @@ def _trigger_deployment(project_id: str, github_repo: str, repo_id: int, headers
             "repoId": repo_id,
             "ref": "main"
         },
-        "target": "preview"
+        "target": "production"
     }
 
     response = requests.post(url, headers=headers, json=payload)

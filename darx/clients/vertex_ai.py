@@ -229,17 +229,18 @@ WRONG - DO NOT DO THIS:
   ]
 }
 
-REQUIRED FILES (Generate these 10 essential files):
+REQUIRED FILES (Generate these 11 essential files):
 1. package.json - Dependencies (Next.js 14, React 18, TypeScript, Tailwind, Framer Motion, Builder.io)
 2. tsconfig.json - TypeScript configuration with path aliases (CRITICAL for @/ imports)
-3. vercel.json - Vercel deployment configuration (Node.js version, build settings)
-4. app/layout.tsx - Root layout with metadata
-5. app/page.tsx - Home page with ALL components inline (Hero, Features, CTA sections all in one file)
-6. app/not-found.tsx - 404 error page (REQUIRED by Next.js App Router)
-7. lib/builder.ts - Builder.io initialization and component registration (REQUIRED for Builder.io integration)
-8. app/globals.css - Tailwind directives
-9. tailwind.config.ts - Tailwind configuration
-10. next.config.js - Next.js configuration
+3. postcss.config.js - PostCSS configuration (CRITICAL for Tailwind CSS compilation)
+4. vercel.json - Vercel deployment configuration (Node.js version, build settings)
+5. app/layout.tsx - Root layout with metadata
+6. app/page.tsx - Home page with ALL components inline (Hero, Features, CTA sections all in one file)
+7. app/not-found.tsx - 404 error page (REQUIRED by Next.js App Router)
+8. lib/builder.ts - Builder.io initialization and component registration (REQUIRED for Builder.io integration)
+9. app/globals.css - Tailwind directives
+10. tailwind.config.ts - Tailwind configuration
+11. next.config.js - Next.js configuration
 
 CRITICAL: Keep components INLINE in app/page.tsx instead of separate component files for simplicity.
 
@@ -292,6 +293,19 @@ This file configures TypeScript and enables the @/ path alias. This is CRITICAL 
 ```
 
 CRITICAL: tsconfig.json MUST include the "paths" configuration with "@/*": ["./*"] to enable @/ imports!
+
+POSTCSS CONFIGURATION TEMPLATE - postcss.config.js:
+This file configures PostCSS to process Tailwind CSS. This is CRITICAL for Tailwind utility classes to work.
+```javascript
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
+```
+
+CRITICAL: postcss.config.js MUST be included or Tailwind CSS will not compile! Without this file, the @tailwind directives in globals.css will remain as raw text and no Tailwind styles will be applied.
 
 BUILDER.IO INTEGRATION FILE TEMPLATE - lib/builder.ts:
 This file initializes Builder.io. Keep it SIMPLE - just import and export.

@@ -81,6 +81,53 @@ def validate_token(token: str) -> dict:
     return token_data
 
 
+def check_slug_availability(client_slug: str) -> tuple:
+    """
+    Check if client slug is available (not already in use)
+
+    Args:
+        client_slug: The slug to check
+
+    Returns:
+        Tuple of (is_available: bool, error_message: str or None)
+    """
+    try:
+        from supabase import create_client
+
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_KEY')
+
+        if not supabase_url or not supabase_key:
+            # If Supabase not configured, allow it (dev mode)
+            print("Warning: Supabase not configured, skipping slug uniqueness check")
+            return True, None
+
+        supabase = create_client(supabase_url, supabase_key)
+
+        # Query for existing client with this slug
+        result = supabase.table('client_onboarding')\
+            .select('id, client_slug, client_name, status')\
+            .eq('client_slug', client_slug)\
+            .execute()
+
+        if result.data and len(result.data) > 0:
+            # Slug already exists
+            existing_client = result.data[0]
+            existing_name = existing_client.get('client_name', 'Unknown')
+            existing_status = existing_client.get('status', 'unknown')
+
+            return False, f"Client slug '{client_slug}' is already in use by '{existing_name}' (status: {existing_status}). Please choose a different slug."
+
+        # Slug is available
+        return True, None
+
+    except Exception as e:
+        print(f"Error checking slug availability: {str(e)}")
+        # On error, allow the slug (fail open to avoid blocking onboarding)
+        # The database will enforce uniqueness as final safeguard
+        return True, None
+
+
 def generate_csrf_token():
     """Generate a CSRF token for form protection"""
     return secrets.token_hex(32)
@@ -116,7 +163,9 @@ def generate_onboarding_link():
             return jsonify({'error': 'client_slug must be at least 3 characters'}), 400
 
         # Check if slug is already in use (query Supabase)
-        # TODO: Add Supabase check here
+        slug_available, error_message = check_slug_availability(client_slug)
+        if not slug_available:
+            return jsonify({'error': error_message}), 409  # 409 Conflict
 
         # Generate token
         token = generate_onboarding_token(client_slug)
@@ -189,6 +238,19 @@ def process_onboarding_form(token: str):
         is_valid, errors = validate_onboarding_form(form_data)
 
         if not is_valid:
+            return render_template('onboarding.html',
+                                   token=token,
+                                   client_slug=token_data['client_slug'],
+                                   csrf_token=generate_csrf_token(),
+                                   errors=errors,
+                                   form_data=form_data)
+
+        # Check slug uniqueness one more time (in case form was manually edited)
+        submitted_slug = form_data['client_slug']
+        slug_available, error_message = check_slug_availability(submitted_slug)
+
+        if not slug_available:
+            errors = [error_message]
             return render_template('onboarding.html',
                                    token=token,
                                    client_slug=token_data['client_slug'],

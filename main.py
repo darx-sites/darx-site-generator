@@ -20,9 +20,49 @@ from darx.clients.gcp import store_backup, log_generation
 from onboarding import onboarding_bp
 from auth import init_oauth
 from auth_routes import auth_bp, init_auth_routes
+from google.cloud import secretmanager
 
 # Configuration
 PROJECT_ID = os.getenv('GCP_PROJECT', 'sylvan-journey-474401-f9')
+
+
+def get_builder_keys_from_secret_manager(project_id: str, secret_prefix: str = '') -> Dict[str, str]:
+    """
+    Retrieve Builder.io keys from Secret Manager
+
+    Args:
+        project_id: GCP project containing the secrets
+        secret_prefix: Prefix for secret names (e.g., 'client-slug-' for INTAKE mode)
+
+    Returns:
+        {'public_key': '...', 'private_key': '...'}
+    """
+    secret_client = secretmanager.SecretManagerServiceClient()
+
+    try:
+        # Retrieve public key
+        public_key_name = f"projects/{project_id}/secrets/{secret_prefix}builder-public-key/versions/latest"
+        public_key_response = secret_client.access_secret_version(name=public_key_name)
+        public_key = public_key_response.payload.data.decode('UTF-8')
+
+        # Retrieve private key
+        private_key_name = f"projects/{project_id}/secrets/{secret_prefix}builder-private-key/versions/latest"
+        private_key_response = secret_client.access_secret_version(name=private_key_name)
+        private_key = private_key_response.payload.data.decode('UTF-8')
+
+        print(f"   ✅ Retrieved Builder.io keys from Secret Manager")
+        print(f"   ℹ️  Project: {project_id}, Prefix: {secret_prefix}")
+
+        return {
+            'public_key': public_key,
+            'private_key': private_key
+        }
+
+    except Exception as e:
+        print(f"   ⚠️  Failed to retrieve Builder.io keys from Secret Manager: {str(e)}")
+        return {'public_key': None, 'private_key': None}
+
+
 LOCATION = os.getenv('GCP_LOCATION', 'us-central1')
 GITHUB_ORG = os.getenv('GITHUB_ORG', 'darx-sites')
 DARX_REASONING_URL = os.getenv('DARX_REASONING_URL', 'https://darx-reasoning-474964350921.us-central1.run.app')
@@ -89,6 +129,11 @@ def generate_site():
         features = data.get('features', [])
         builder_space_public_key = data.get('builder_space_public_key')  # Optional: use existing Builder.io Space
 
+        # INTAKE mode support
+        mode = data.get('mode', 'DEDICATED')  # 'INTAKE' or 'DEDICATED'
+        gcp_project_id = data.get('gcp_project_id')  # Where to retrieve secrets from
+        secret_prefix = data.get('secret_prefix', '')  # Prefix for secret names (e.g., 'client-slug-')
+
         if not project_name or not requirements:
             return jsonify({
                 'error': 'Missing required fields: project_name, requirements'
@@ -151,14 +196,27 @@ def generate_site():
 
         print("   ✅ Code pushed to GitHub")
 
-        # Step 4: Deploy to Vercel (initial deployment - Builder.io keys added later)
+        # Step 4: Retrieve Builder.io keys (from Secret Manager or env vars)
+        print("\n🔑 Retrieving Builder.io credentials...")
+        if mode == 'INTAKE' and gcp_project_id:
+            # INTAKE mode: Retrieve from shared project's Secret Manager
+            builder_keys = get_builder_keys_from_secret_manager(gcp_project_id, secret_prefix)
+            builder_public_key_for_env = builder_keys.get('public_key')
+            builder_private_key_for_env = builder_keys.get('private_key')
+        else:
+            # DEDICATED mode or fallback: Use environment variables
+            builder_public_key_for_env = os.getenv('BUILDER_IO_PUBLIC_KEY')
+            builder_private_key_for_env = os.getenv('BUILDER_IO_PRIVATE_KEY')
+            print(f"   ℹ️  Using environment variables for Builder.io keys")
+
+        # Step 5: Deploy to Vercel
         print("\n🚀 Deploying to Vercel...")
         vercel_result = deploy_to_vercel(
             project_name=project_name,
             github_repo=f"{GITHUB_ORG}/{project_name}",
             env_vars={
-                'NEXT_PUBLIC_BUILDER_API_KEY': os.getenv('BUILDER_IO_PUBLIC_KEY'),
-                'BUILDER_PRIVATE_KEY': os.getenv('BUILDER_IO_PRIVATE_KEY'),
+                'NEXT_PUBLIC_BUILDER_API_KEY': builder_public_key_for_env,
+                'BUILDER_PRIVATE_KEY': builder_private_key_for_env,
             }
         )
 
@@ -168,11 +226,11 @@ def generate_site():
         staging_url = vercel_result['staging_url']
         print(f"   ✅ Deployed to: {staging_url}")
 
-        # Step 5: Configure Builder.io visual editor
+        # Step 6: Configure Builder.io visual editor
         print("\n🎨 Setting up Builder.io visual editor...")
         builder_space_id = project_name  # Default fallback
-        builder_public_key = None
-        builder_private_key = None
+        builder_public_key = builder_public_key_for_env  # Use retrieved keys
+        builder_private_key = builder_private_key_for_env  # Use retrieved keys
         builder_space_url = None
 
         if builder_space_public_key:
