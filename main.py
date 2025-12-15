@@ -309,6 +309,7 @@ def generate_site():
         response = {
             'success': True,
             'project_name': project_name,
+            'vercel_project_id': vercel_result.get('vercel_project_id'),
             'staging_url': staging_url,
             'github_repo': repo_url,
             'builder_io_project': builder_space_id,

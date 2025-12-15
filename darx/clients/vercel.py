@@ -85,6 +85,7 @@ def deploy_to_vercel(
 
         return {
             'success': True,
+            'vercel_project_id': project_id,
             'staging_url': staging_url,
             'production_url': production_url,
             'deployment_id': deployment_id,
