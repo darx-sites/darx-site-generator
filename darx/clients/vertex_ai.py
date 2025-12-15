@@ -329,19 +329,30 @@ export default function Page({ params }: PageProps) {
   useEffect(() => {
     async function fetchContent() {
       try {
-        const content = await builder
-          .get('page', {
-            url: urlPath,
-            options: {
-              includeRefs: true,
-            },
-          })
-          .promise();
+        const apiKey = process.env.NEXT_PUBLIC_BUILDER_API_KEY;
 
-        setContent(content);
+        // Fetch from Builder.io CDN API with cache-busting
+        const timestamp = Date.now();
+        const url = `https://cdn.builder.io/api/v3/content/page?apiKey=${apiKey}&url=${encodeURIComponent(urlPath)}&cachebust=true&_=${timestamp}`;
+
+        const response = await fetch(url, {
+          cache: 'no-store'
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+
+          if (data.results && data.results.length > 0) {
+            setContent(data.results[0]);
+            setLoading(false);
+          } else {
+            setLoading(false);
+          }
+        } else {
+          setLoading(false);
+        }
       } catch (error) {
         console.error('Error fetching Builder.io content:', error);
-      } finally {
         setLoading(false);
       }
     }
@@ -380,10 +391,11 @@ export default function Page({ params }: PageProps) {
 
 CRITICAL: The catch-all route at app/[[...page]]/page.tsx is REQUIRED:
 1. It must use double square brackets [[...page]] to include the root path (/)
-2. It fetches content from Builder.io using the URL path
-3. It renders content using BuilderComponent
-4. It shows a loading state while fetching
-5. It shows 404 for non-existent pages (unless in preview mode)
+2. It fetches content from Builder.io CDN API directly (more reliable than builder.get())
+3. It includes cache-busting parameters for real-time content updates
+4. It renders content using BuilderComponent
+5. It shows a loading state while fetching
+6. It shows 404 for non-existent pages (unless in preview mode)
 
 This route enables:
 - Builder.io visual editor preview
