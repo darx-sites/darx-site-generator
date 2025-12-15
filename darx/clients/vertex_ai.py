@@ -116,7 +116,7 @@ Generate complete, production-ready code. Include Builder.io integration for vis
 
         # CRITICAL: Validate that all required files were generated
         file_paths = [f.get('path', '') for f in files]
-        required_files = ['app/page.tsx', 'app/layout.tsx', 'app/not-found.tsx', 'lib/builder.ts', 'package.json', 'vercel.json']
+        required_files = ['app/page.tsx', 'app/layout.tsx', 'app/not-found.tsx', 'lib/builder.ts', 'package.json', 'tsconfig.json', 'vercel.json']
         missing_files = [f for f in required_files if f not in file_paths]
 
         if missing_files:
@@ -229,16 +229,17 @@ WRONG - DO NOT DO THIS:
   ]
 }
 
-REQUIRED FILES (Generate these 9 essential files):
+REQUIRED FILES (Generate these 10 essential files):
 1. package.json - Dependencies (Next.js 14, React 18, TypeScript, Tailwind, Framer Motion, Builder.io)
-2. vercel.json - Vercel deployment configuration (Node.js version, build settings)
-3. app/layout.tsx - Root layout with metadata
-4. app/page.tsx - Home page with ALL components inline (Hero, Features, CTA sections all in one file)
-5. app/not-found.tsx - 404 error page (REQUIRED by Next.js App Router)
-6. lib/builder.ts - Builder.io initialization and component registration (REQUIRED for Builder.io integration)
-7. app/globals.css - Tailwind directives
-8. tailwind.config.ts - Tailwind configuration
-9. next.config.js - Next.js configuration
+2. tsconfig.json - TypeScript configuration with path aliases (CRITICAL for @/ imports)
+3. vercel.json - Vercel deployment configuration (Node.js version, build settings)
+4. app/layout.tsx - Root layout with metadata
+5. app/page.tsx - Home page with ALL components inline (Hero, Features, CTA sections all in one file)
+6. app/not-found.tsx - 404 error page (REQUIRED by Next.js App Router)
+7. lib/builder.ts - Builder.io initialization and component registration (REQUIRED for Builder.io integration)
+8. app/globals.css - Tailwind directives
+9. tailwind.config.ts - Tailwind configuration
+10. next.config.js - Next.js configuration
 
 CRITICAL: Keep components INLINE in app/page.tsx instead of separate component files for simplicity.
 
@@ -257,6 +258,40 @@ export default function NotFound() {
   );
 }
 ```
+
+TYPESCRIPT CONFIGURATION TEMPLATE - tsconfig.json:
+This file configures TypeScript and enables the @/ path alias. This is CRITICAL for imports to work.
+```json
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+```
+
+CRITICAL: tsconfig.json MUST include the "paths" configuration with "@/*": ["./*"] to enable @/ imports!
 
 BUILDER.IO INTEGRATION FILE TEMPLATE - lib/builder.ts:
 This file initializes Builder.io. Keep it SIMPLE - just import and export.
