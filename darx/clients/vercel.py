@@ -129,7 +129,8 @@ def _get_or_create_project(project_name: str, github_repo: str, headers: Dict) -
         "buildCommand": "npm run build",
         "devCommand": "npm run dev",
         "installCommand": "npm install",
-        "outputDirectory": ".next"
+        "outputDirectory": ".next",
+        "ssoProtection": None  # Disable SSO protection for easier testing
     }
 
     response = requests.post(url, headers=headers, json=payload)
