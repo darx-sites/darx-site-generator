@@ -21,17 +21,26 @@ onboarding_bp = Blueprint('onboarding', __name__,
                           template_folder='templates',
                           url_prefix='/onboard')
 
-# In-memory token store (in production, use Redis or database)
-# Format: {token: {'client_slug': str, 'created_at': datetime, 'used': bool}}
-onboarding_tokens = {}
-
 # Token expiry time (24 hours)
 TOKEN_EXPIRY_HOURS = 24
 
 
+def get_supabase():
+    """Get Supabase client for token storage"""
+    from supabase import create_client
+
+    supabase_url = os.getenv('SUPABASE_URL')
+    supabase_key = os.getenv('SUPABASE_KEY')
+
+    if not supabase_url or not supabase_key:
+        raise Exception("Supabase credentials not configured")
+
+    return create_client(supabase_url, supabase_key)
+
+
 def generate_onboarding_token(client_slug: str) -> str:
     """
-    Generate a secure one-time token for onboarding
+    Generate a secure one-time token for onboarding and store in Supabase
 
     Args:
         client_slug: Client identifier
@@ -42,19 +51,27 @@ def generate_onboarding_token(client_slug: str) -> str:
     # Generate secure random token
     token = secrets.token_urlsafe(32)
 
-    # Store token with metadata
-    onboarding_tokens[token] = {
-        'client_slug': client_slug,
-        'created_at': datetime.utcnow(),
-        'used': False
-    }
+    try:
+        supabase = get_supabase()
 
-    return token
+        # Store token in Supabase with metadata
+        supabase.table('onboarding_tokens').insert({
+            'token': token,
+            'client_slug': client_slug,
+            'created_at': datetime.utcnow().isoformat(),
+            'used': False,
+            'expires_at': (datetime.utcnow() + timedelta(hours=TOKEN_EXPIRY_HOURS)).isoformat()
+        }).execute()
+
+        return token
+    except Exception as e:
+        print(f"Error storing onboarding token: {str(e)}")
+        raise
 
 
 def validate_token(token: str) -> dict:
     """
-    Validate an onboarding token
+    Validate an onboarding token from Supabase
 
     Args:
         token: Token to validate
@@ -62,23 +79,38 @@ def validate_token(token: str) -> dict:
     Returns:
         Token data if valid, None otherwise
     """
-    if token not in onboarding_tokens:
+    try:
+        supabase = get_supabase()
+
+        # Fetch token from Supabase
+        result = supabase.table('onboarding_tokens')\
+            .select('*')\
+            .eq('token', token)\
+            .single()\
+            .execute()
+
+        if not result.data:
+            return None
+
+        token_data = result.data
+
+        # Check if token has been used
+        if token_data['used']:
+            return None
+
+        # Check if token has expired
+        expires_at = datetime.fromisoformat(token_data['expires_at'].replace('Z', '+00:00'))
+        if datetime.utcnow().replace(tzinfo=None) > expires_at.replace(tzinfo=None):
+            return None
+
+        return {
+            'client_slug': token_data['client_slug'],
+            'created_at': datetime.fromisoformat(token_data['created_at'].replace('Z', '+00:00')),
+            'used': token_data['used']
+        }
+    except Exception as e:
+        print(f"Error validating token: {str(e)}")
         return None
-
-    token_data = onboarding_tokens[token]
-
-    # Check if token has been used
-    if token_data['used']:
-        return None
-
-    # Check if token has expired
-    expiry_time = token_data['created_at'] + timedelta(hours=TOKEN_EXPIRY_HOURS)
-    if datetime.utcnow() > expiry_time:
-        # Clean up expired token
-        del onboarding_tokens[token]
-        return None
-
-    return token_data
 
 
 def check_slug_availability(client_slug: str) -> tuple:
@@ -258,8 +290,15 @@ def process_onboarding_form(token: str):
                                    errors=errors,
                                    form_data=form_data)
 
-        # Mark token as used
-        onboarding_tokens[token]['used'] = True
+        # Mark token as used in Supabase
+        try:
+            supabase = get_supabase()
+            supabase.table('onboarding_tokens')\
+                .update({'used': True})\
+                .eq('token', token)\
+                .execute()
+        except Exception as e:
+            print(f"Error marking token as used: {str(e)}")
 
         # Store client data in Supabase
         success, result = store_client_data(form_data)
@@ -399,11 +438,17 @@ def store_client_data(form_data: dict) -> tuple:
 
 # Cleanup function for expired tokens (call periodically)
 def cleanup_expired_tokens():
-    """Remove expired tokens from memory"""
-    now = datetime.utcnow()
-    expired = [
-        token for token, data in onboarding_tokens.items()
-        if now > data['created_at'] + timedelta(hours=TOKEN_EXPIRY_HOURS)
-    ]
-    for token in expired:
-        del onboarding_tokens[token]
+    """Remove expired tokens from Supabase"""
+    try:
+        supabase = get_supabase()
+        now = datetime.utcnow().isoformat()
+
+        # Delete tokens that have expired
+        supabase.table('onboarding_tokens')\
+            .delete()\
+            .lt('expires_at', now)\
+            .execute()
+
+        print(f"Cleaned up expired onboarding tokens")
+    except Exception as e:
+        print(f"Error cleaning up expired tokens: {str(e)}")
