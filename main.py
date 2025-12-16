@@ -67,6 +67,102 @@ LOCATION = os.getenv('GCP_LOCATION', 'us-central1')
 GITHUB_ORG = os.getenv('GITHUB_ORG', 'darx-sites')
 DARX_REASONING_URL = os.getenv('DARX_REASONING_URL', 'https://darx-reasoning-474964350921.us-central1.run.app')
 
+
+def _configure_builder_preview_url(
+    staging_url: str,
+    builder_public_key: str,
+    builder_private_key: str,
+    model_name: str = 'page'
+) -> None:
+    """
+    Configure Builder.io model preview URL to enable visual editing
+
+    This sets the staging URL as the preview URL so Builder.io can iframe/preview the deployed site.
+
+    Args:
+        staging_url: URL of the deployed Vercel site
+        builder_public_key: Builder.io public API key
+        builder_private_key: Builder.io private API key
+        model_name: Model to configure (default: 'page')
+    """
+    if not builder_public_key or not builder_private_key:
+        print(f"   ⚠️  Builder.io keys not available - skipping preview URL configuration")
+        return
+
+    try:
+        # Check if model exists
+        check_url = f"https://cdn.builder.io/api/v1/models/{model_name}?apiKey={builder_public_key}"
+        check_response = requests.get(check_url, timeout=30)
+
+        if check_response.status_code == 404:
+            # Model doesn't exist - create it
+            print(f"   📝 Creating '{model_name}' model with preview URL...")
+
+            create_url = "https://builder.io/api/v1/models"
+            headers = {
+                'Authorization': f'Bearer {builder_private_key}',
+                'Content-Type': 'application/json'
+            }
+
+            payload = {
+                'name': model_name.title(),
+                'id': model_name,
+                'kind': 'page',
+                'examplePageUrl': staging_url,
+                'publicReadable': True,
+                'showTargeting': True,
+                'showMetrics': True,
+                'allowHeatmap': True
+            }
+
+            create_response = requests.post(
+                create_url,
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+
+            create_response.raise_for_status()
+            print(f"   ✅ Created '{model_name}' model with preview URL: {staging_url}")
+
+        else:
+            # Model exists - update preview URL
+            check_response.raise_for_status()
+            model_data = check_response.json()
+
+            current_preview_url = model_data.get('examplePageUrl')
+            print(f"   ℹ️  Current preview URL: {current_preview_url or 'Not set'}")
+
+            # Update the model with the preview URL
+            update_url = f"https://builder.io/api/v1/models/{model_name}"
+            headers = {
+                'Authorization': f'Bearer {builder_private_key}',
+                'Content-Type': 'application/json'
+            }
+
+            payload = {
+                'examplePageUrl': staging_url
+            }
+
+            update_response = requests.put(
+                update_url,
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+
+            update_response.raise_for_status()
+            print(f"   ✅ Updated '{model_name}' model preview URL: {staging_url}")
+
+    except requests.exceptions.HTTPError as e:
+        error_msg = f"{e.response.status_code} - {e.response.text if hasattr(e, 'response') else str(e)}"
+        print(f"   ⚠️  Builder.io API error: {error_msg}")
+        raise
+    except Exception as e:
+        print(f"   ⚠️  Failed to configure preview URL: {str(e)}")
+        raise
+
+
 # Create Flask app
 app = Flask(__name__)
 
@@ -225,6 +321,18 @@ def generate_site():
 
         staging_url = vercel_result['staging_url']
         print(f"   ✅ Deployed to: {staging_url}")
+
+        # Step 5.5: Configure Builder.io preview URL for visual editing
+        print("\n🔧 Configuring Builder.io preview URL...")
+        try:
+            _configure_builder_preview_url(
+                staging_url=staging_url,
+                builder_public_key=builder_public_key_for_env,
+                builder_private_key=builder_private_key_for_env
+            )
+        except Exception as e:
+            print(f"   ⚠️  Failed to configure preview URL: {str(e)}")
+            print(f"   ℹ️  Visual editing may not work properly")
 
         # Step 6: Configure Builder.io visual editor
         print("\n🎨 Setting up Builder.io visual editor...")
