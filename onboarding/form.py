@@ -260,6 +260,7 @@ def process_onboarding_form(token: str):
             'client_slug': request.form.get('client_slug', token_data['client_slug']).strip(),
             'contact_email': request.form.get('contact_email', '').strip(),
             'website_type': request.form.get('website_type', '').strip(),
+            'tier': request.form.get('tier', 'entry').strip(),  # Default to entry if not provided
             'builder_public_key': request.form.get('builder_public_key', '').strip(),
             'builder_private_key': request.form.get('builder_private_key', '').strip(),
             'builder_space_id': request.form.get('builder_space_id', '').strip(),
@@ -352,11 +353,7 @@ def publish_onboarding_message(form_data: dict, client_id: str) -> None:
         'clientName': form_data['client_name'],
         'contactEmail': form_data['contact_email'],
         'websiteType': form_data.get('website_type', 'marketing'),
-        'builder': {
-            'publicKey': form_data['builder_public_key'],
-            'privateKey': form_data['builder_private_key'],
-            'spaceId': form_data.get('builder_space_id', '')
-        },
+        'tier': form_data.get('tier', 'entry'),
         'metadata': {
             'initiatedBy': 'onboarding-form',
             'onboardingSource': 'admin-dashboard',
@@ -364,6 +361,14 @@ def publish_onboarding_message(form_data: dict, client_id: str) -> None:
             'supabaseClientId': client_id
         }
     }
+
+    # Only include Builder.io credentials for premium+ tiers
+    if form_data.get('tier', 'entry') != 'entry':
+        message_data['builder'] = {
+            'publicKey': form_data['builder_public_key'],
+            'privateKey': form_data['builder_private_key'],
+            'spaceId': form_data.get('builder_space_id', '')
+        }
 
     # Publish the message
     message_json = json.dumps(message_data)
@@ -396,19 +401,25 @@ def store_client_data(form_data: dict) -> tuple:
         supabase = create_client(supabase_url, supabase_key)
 
         # Prepare client onboarding record
+        tier = form_data.get('tier', 'entry')
+
         onboarding_record = {
             'client_name': form_data['client_name'],
             'client_slug': form_data['client_slug'],
             'contact_email': form_data['contact_email'],
             'industry': form_data.get('industry'),
-            'builder_public_key': form_data['builder_public_key'],
-            'builder_private_key': form_data['builder_private_key'],
+            'tier': tier,
             'onboarding_form_data': {
                 'website_type': form_data['website_type'],
-                'builder_space_id': form_data.get('builder_space_id'),
             },
             'status': 'pending_provisioning',
         }
+
+        # Only include Builder.io credentials for premium+ tiers
+        if tier != 'entry':
+            onboarding_record['builder_public_key'] = form_data['builder_public_key']
+            onboarding_record['builder_private_key'] = form_data['builder_private_key']
+            onboarding_record['onboarding_form_data']['builder_space_id'] = form_data.get('builder_space_id')
 
         # Insert into client_onboarding table (the correct table for onboarding submissions)
         result = supabase.table('client_onboarding').insert(onboarding_record).execute()

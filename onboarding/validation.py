@@ -18,15 +18,21 @@ def validate_onboarding_form(data: Dict) -> Tuple[bool, List[str]]:
     """
     errors = []
 
-    # Required fields
+    # Get tier (default to entry if not specified)
+    tier = data.get('tier', 'entry').strip()
+
+    # Base required fields (always required)
     required_fields = {
         'client_name': 'Client Name',
         'client_slug': 'Client Slug',
         'contact_email': 'Contact Email',
         'website_type': 'Website Type',
-        'builder_public_key': 'Builder.io Public Key',
-        'builder_private_key': 'Builder.io Private Key'
     }
+
+    # Builder.io credentials are only required for premium+ tiers
+    if tier != 'entry':
+        required_fields['builder_public_key'] = 'Builder.io Public Key'
+        required_fields['builder_private_key'] = 'Builder.io Private Key'
 
     for field, label in required_fields.items():
         if not data.get(field, '').strip():
