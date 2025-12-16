@@ -136,8 +136,8 @@ def check_slug_availability(client_slug: str) -> tuple:
 
         supabase = create_client(supabase_url, supabase_key)
 
-        # Query for existing client with this slug
-        result = supabase.table('client_onboarding')\
+        # Query for existing client with this slug in clients table
+        result = supabase.table('clients')\
             .select('id, client_slug, client_name, status')\
             .eq('client_slug', client_slug)\
             .execute()
@@ -400,29 +400,28 @@ def store_client_data(form_data: dict) -> tuple:
 
         supabase = create_client(supabase_url, supabase_key)
 
-        # Prepare client onboarding record
+        # Prepare client record
         tier = form_data.get('tier', 'entry')
 
-        onboarding_record = {
+        client_record = {
             'client_name': form_data['client_name'],
             'client_slug': form_data['client_slug'],
             'contact_email': form_data['contact_email'],
             'industry': form_data.get('industry'),
-            'tier': tier,
-            'onboarding_form_data': {
-                'website_type': form_data['website_type'],
-            },
+            'builder_space_tier': tier,
             'status': 'pending_provisioning',
+            'website_type': form_data.get('website_type'),
         }
 
         # Only include Builder.io credentials for premium+ tiers
         if tier != 'entry':
-            onboarding_record['builder_public_key'] = form_data['builder_public_key']
-            onboarding_record['builder_private_key'] = form_data['builder_private_key']
-            onboarding_record['onboarding_form_data']['builder_space_id'] = form_data.get('builder_space_id')
+            client_record['builder_public_key'] = form_data['builder_public_key']
+            client_record['builder_private_key'] = form_data['builder_private_key']
+            if form_data.get('builder_space_id'):
+                client_record['builder_space_id'] = form_data['builder_space_id']
 
-        # Insert into client_onboarding table (the correct table for onboarding submissions)
-        result = supabase.table('client_onboarding').insert(onboarding_record).execute()
+        # Insert into clients table
+        result = supabase.table('clients').insert(client_record).execute()
 
         if result.data:
             client_id = result.data[0].get('id')
