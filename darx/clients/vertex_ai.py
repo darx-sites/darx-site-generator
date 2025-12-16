@@ -116,7 +116,7 @@ Generate complete, production-ready code. Include Builder.io integration for vis
 
         # CRITICAL: Validate that all required files were generated
         file_paths = [f.get('path', '') for f in files]
-        required_files = ['app/page.tsx', 'app/layout.tsx', 'app/not-found.tsx', 'lib/builder.ts', 'package.json', 'tsconfig.json', 'vercel.json']
+        required_files = ['app/[[...page]]/page.tsx', 'app/layout.tsx', 'app/not-found.tsx', 'lib/builder.ts', 'package.json', 'tsconfig.json', 'vercel.json']
         missing_files = [f for f in required_files if f not in file_paths]
 
         if missing_files:
@@ -230,19 +230,22 @@ WRONG - DO NOT DO THIS:
 }
 
 REQUIRED FILES (Generate these 11 essential files):
-1. package.json - Dependencies (Next.js 14, React 18, TypeScript, Tailwind, Framer Motion, Builder.io)
+1. package.json - Dependencies (Next.js 16, React 19, TypeScript, Tailwind, Framer Motion, Builder.io)
 2. tsconfig.json - TypeScript configuration with path aliases (CRITICAL for @/ imports)
 3. postcss.config.js - PostCSS configuration (CRITICAL for Tailwind CSS compilation)
 4. vercel.json - Vercel deployment configuration (Node.js version, build settings)
 5. app/layout.tsx - Root layout with metadata
-6. app/page.tsx - Home page with ALL components inline (Hero, Features, CTA sections all in one file)
+6. app/[[...page]]/page.tsx - Builder.io catch-all route (handles ALL pages including homepage - NO static app/page.tsx!)
 7. app/not-found.tsx - 404 error page (REQUIRED by Next.js App Router)
 8. lib/builder.ts - Builder.io initialization and component registration (REQUIRED for Builder.io integration)
 9. app/globals.css - Tailwind directives
 10. tailwind.config.ts - Tailwind configuration
 11. next.config.js - Next.js configuration
 
-CRITICAL: Keep components INLINE in app/page.tsx instead of separate component files for simplicity.
+CRITICAL:
+- DO NOT generate app/page.tsx - use app/[[...page]]/page.tsx ONLY so Builder.io handles ALL routes
+- The catch-all route at app/[[...page]]/page.tsx must handle the homepage (/) and all other pages
+- This ensures Builder.io content is rendered for every page, not static templates
 
 NOT-FOUND PAGE TEMPLATE:
 app/not-found.tsx must be a simple 404 page:
@@ -350,13 +353,14 @@ const inter = Inter({ subsets: ['latin'] });
 
 BUILDER.IO CATCH-ALL ROUTE - CRITICAL FOR VISUAL EDITOR:
 You MUST create app/[[...page]]/page.tsx to enable Builder.io visual editor preview.
-This route fetches and renders all Builder.io pages.
+This route fetches and renders all Builder.io pages, with support for both DEDICATED and SHARED modes.
 
 ```typescript
 'use client';
 
 import { BuilderComponent, builder, useIsPreviewing } from '@builder.io/react';
 import { useEffect, useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
 
 // Initialize Builder with your public API key
 builder.init(process.env.NEXT_PUBLIC_BUILDER_API_KEY || '');
@@ -371,6 +375,7 @@ export default function Page({ params }: PageProps) {
   const [content, setContent] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const isPreviewing = useIsPreviewing();
+  const pathname = usePathname();
 
   // Get the URL path from params
   const urlPath = params.page ? `/${params.page.join('/')}` : '/';
@@ -379,10 +384,23 @@ export default function Page({ params }: PageProps) {
     async function fetchContent() {
       try {
         const apiKey = process.env.NEXT_PUBLIC_BUILDER_API_KEY;
+        const spaceMode = process.env.NEXT_PUBLIC_BUILDER_SPACE_MODE || 'DEDICATED';
+        const clientSlug = process.env.NEXT_PUBLIC_CLIENT_SLUG;
 
-        // Fetch from Builder.io CDN API with cache-busting
-        const timestamp = Date.now();
-        const url = `https://cdn.builder.io/api/v3/content/page?apiKey=${apiKey}&url=${encodeURIComponent(urlPath)}&cachebust=true&_=${timestamp}`;
+        let url: string;
+
+        if (spaceMode === 'SHARED' && clientSlug) {
+          // SHARED MODE: Query with client_slug filter for multi-tenant isolation
+          const query = JSON.stringify({
+            'data.client_slug': clientSlug,
+            'data.url_path': urlPath,
+            'data.env': 'entry'
+          });
+          url = `https://cdn.builder.io/api/v3/content/client_page?apiKey=${apiKey}&query=${encodeURIComponent(query)}&cachebust=true&_=${Date.now()}`;
+        } else {
+          // DEDICATED MODE: Traditional URL matching
+          url = `https://cdn.builder.io/api/v3/content/page?apiKey=${apiKey}&url=${encodeURIComponent(urlPath)}&cachebust=true&_=${Date.now()}`;
+        }
 
         const response = await fetch(url, {
           cache: 'no-store'
@@ -392,6 +410,16 @@ export default function Page({ params }: PageProps) {
           const data = await response.json();
 
           if (data.results && data.results.length > 0) {
+            // SECURITY: For SHARED mode, verify client_slug matches
+            if (spaceMode === 'SHARED' && clientSlug) {
+              const contentSlug = data.results[0]?.data?.client_slug;
+              if (contentSlug !== clientSlug) {
+                console.error('SECURITY: Client slug mismatch');
+                setLoading(false);
+                return;
+              }
+            }
+
             setContent(data.results[0]);
             setLoading(false);
           } else {
@@ -418,12 +446,18 @@ export default function Page({ params }: PageProps) {
     );
   }
 
-  // If no content found and not previewing, show 404
+  // If no content found and not previewing, show helpful message
   if (!content && !isPreviewing) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen">
-        <h1 className="text-4xl font-bold text-gray-900 mb-4">404</h1>
-        <p className="text-gray-600">Page not found</p>
+      <div className="flex flex-col items-center justify-center min-h-screen px-4">
+        <h1 className="text-4xl font-bold text-gray-900 mb-4">Welcome!</h1>
+        <p className="text-gray-600 mb-8 text-center">
+          This page is waiting for content. Visit{' '}
+          <a href="https://builder.io" className="text-blue-600 hover:underline" target="_blank">
+            builder.io
+          </a>{' '}
+          to start creating your page.
+        </p>
       </div>
     );
   }
@@ -431,7 +465,7 @@ export default function Page({ params }: PageProps) {
   // Render the Builder.io content
   return (
     <BuilderComponent
-      model="page"
+      model={process.env.NEXT_PUBLIC_BUILDER_SPACE_MODE === 'SHARED' ? 'client_page' : 'page'}
       content={content}
     />
   );
@@ -440,16 +474,18 @@ export default function Page({ params }: PageProps) {
 
 CRITICAL: The catch-all route at app/[[...page]]/page.tsx is REQUIRED:
 1. It must use double square brackets [[...page]] to include the root path (/)
-2. It fetches content from Builder.io CDN API directly (more reliable than builder.get())
-3. It includes cache-busting parameters for real-time content updates
-4. It renders content using BuilderComponent
-5. It shows a loading state while fetching
-6. It shows 404 for non-existent pages (unless in preview mode)
+2. It detects SHARED vs DEDICATED mode from NEXT_PUBLIC_BUILDER_SPACE_MODE env var
+3. For SHARED mode: queries using client_slug filter for multi-tenant isolation
+4. For DEDICATED mode: uses traditional URL matching
+5. It includes security validation to prevent cross-client content leakage
+6. It renders content using BuilderComponent with the appropriate model
+7. It shows a helpful message when no content exists (instead of blank page)
 
 This route enables:
 - Builder.io visual editor preview
 - Client can edit pages in Builder.io UI
 - Changes in Builder.io appear on the live site immediately
+- Support for both dedicated and shared Builder.io spaces
 
 PACKAGE.JSON REQUIREMENTS - CRITICAL SECURITY VERSIONS:
 You MUST use these EXACT versions (NOT ranges like ^14.0.0):
