@@ -293,8 +293,30 @@
                     <div class="help-text">Optional - helps us customize templates</div>
                 </div>
 
-                <!-- Builder.io Credentials Section -->
+                <!-- CMS Space Selection -->
                 <div class="form-section">
+                    <h3>CMS Space Type</h3>
+                    <p class="section-description">
+                        Choose how you want to manage your website content.
+                    </p>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="radio" name="tier" value="entry" checked onchange="toggleBuilderFields()">
+                            <strong>Shared Space</strong> - Uses DARX managed CMS space (no setup required)
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="radio" name="tier" value="premium" onchange="toggleBuilderFields()">
+                            <strong>Individual Space</strong> - Uses your own Builder.io space (requires Builder.io account)
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Builder.io Credentials Section (conditional) -->
+                <div class="form-section" id="builder-credentials-section" style="display: none;">
                     <h3>Builder.io Credentials</h3>
                     <p class="section-description">
                         Enter your Builder.io Space credentials. You can find these in your
@@ -307,7 +329,7 @@
                         </label>
                         <input type="text" id="builder_public_key" name="builder_public_key"
                                value="{{ form_data.builder_public_key if form_data else '' }}"
-                               placeholder="pub-xxxxxxxxxxxxxxxxx" required>
+                               placeholder="pub-xxxxxxxxxxxxxxxxx">
                         <div class="help-text">Starts with "pub-" - found in Space settings</div>
                     </div>
 
@@ -316,7 +338,7 @@
                             Builder.io Private Key <span class="required">*</span>
                         </label>
                         <input type="password" id="builder_private_key" name="builder_private_key"
-                               placeholder="Your private API key" required>
+                               placeholder="Your private API key">
                         <div class="help-text">This will be stored securely and never shared</div>
                     </div>
 
@@ -349,6 +371,27 @@
     </footer>
 
     <script>
+        // Toggle Builder.io credentials section based on tier selection
+        function toggleBuilderFields() {
+            const tier = document.querySelector('input[name="tier"]:checked').value;
+            const builderSection = document.getElementById('builder-credentials-section');
+            const publicKeyField = document.getElementById('builder_public_key');
+            const privateKeyField = document.getElementById('builder_private_key');
+
+            if (tier === 'premium') {
+                builderSection.style.display = 'block';
+                publicKeyField.required = true;
+                privateKeyField.required = true;
+            } else {
+                builderSection.style.display = 'none';
+                publicKeyField.required = false;
+                privateKeyField.required = false;
+                publicKeyField.value = '';
+                privateKeyField.value = '';
+                document.getElementById('builder_space_id').value = '';
+            }
+        }
+
         // Form submission handling
         document.getElementById('onboarding-form').addEventListener('submit', function(e) {
             const btn = document.getElementById('submit-btn');
