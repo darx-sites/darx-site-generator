@@ -320,3 +320,85 @@ def _fetch_build_logs(deployment_id: str, headers: Dict) -> str:
 
     except Exception as e:
         return f"Error fetching logs: {str(e)}"
+
+
+def add_custom_domain_to_project(
+    project_id: str,
+    client_slug: str,
+    domain: str = None
+) -> Dict[str, Any]:
+    """
+    Add custom domain to Vercel project for *.darx.site wildcard routing
+
+    Args:
+        project_id: Vercel project ID or name
+        client_slug: Client identifier (e.g., 'acme-corp')
+        domain: Custom domain (default: {client_slug}.darx.site)
+
+    Returns:
+        {
+            'success': bool,
+            'domain': str,
+            'verified': bool,
+            'error': str (if failed)
+        }
+    """
+
+    if not VERCEL_TOKEN:
+        return {
+            'success': False,
+            'error': 'VERCEL_TOKEN not configured'
+        }
+
+    if not domain:
+        domain = f"{client_slug}.darx.site"
+
+    try:
+        headers = {
+            'Authorization': f'Bearer {VERCEL_TOKEN}',
+            'Content-Type': 'application/json'
+        }
+
+        # Add domain to project
+        url = f"https://api.vercel.com/v9/projects/{project_id}/domains"
+        if VERCEL_TEAM_ID:
+            url += f"?teamId={VERCEL_TEAM_ID}"
+
+        payload = {
+            'name': domain
+        }
+
+        response = requests.post(url, headers=headers, json=payload)
+
+        if response.status_code in (200, 201):
+            result = response.json()
+            print(f"   ✅ Added custom domain: {domain} → {project_id}")
+
+            return {
+                'success': True,
+                'domain': domain,
+                'verified': result.get('verified', False),
+                'created_at': result.get('createdAt')
+            }
+        elif response.status_code == 409:
+            # Domain already exists on this project
+            print(f"   ℹ️  Domain already exists: {domain}")
+            return {
+                'success': True,
+                'domain': domain,
+                'verified': True,
+                'note': 'Domain already configured'
+            }
+        else:
+            error_msg = f"Failed to add domain: {response.status_code} - {response.text}"
+            print(f"   ❌ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg
+            }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Domain configuration error: {str(e)}'
+        }
