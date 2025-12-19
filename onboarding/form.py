@@ -428,21 +428,18 @@ def store_client_data(form_data: dict) -> tuple:
         }
 
         # Handle Builder.io credentials based on mode
-        # BOTH modes store SECRET REFERENCES, not actual keys
+        # BOTH modes store SECRET REFERENCES to client-specific secrets
         client_slug = form_data['client_slug']
 
-        if builder_space_mode == 'SHARED':
-            # SHARED mode: References to secrets in darx-shared-intake project
-            # All SHARED clients use the same Builder.io space, so they share the same space ID
-            client_record['builder_public_key'] = f'client-{client_slug}-builder-public-key'  # Secret reference
-            client_record['builder_private_key'] = f'client-{client_slug}-builder-private-key'  # Secret reference
-            client_record['builder_space_id'] = 'darx-shared-builder-space-id'  # SAME for all SHARED clients
-        else:
-            # DEDICATED mode: References to secrets in client's own GCP project
-            # Each DEDICATED client has their own Builder.io space
-            client_record['builder_public_key'] = f'client-{client_slug}-builder-public-key'  # Secret reference
-            client_record['builder_private_key'] = f'client-{client_slug}-builder-private-key'  # Secret reference
-            client_record['builder_space_id'] = f'client-{client_slug}-builder-space-id'  # Secret reference
+        # Every client gets their own secret references, regardless of mode
+        # This allows seamless upgrades from SHARED to DEDICATED
+        client_record['builder_public_key'] = f'client-{client_slug}-builder-public-key'  # Secret reference
+        client_record['builder_private_key'] = f'client-{client_slug}-builder-private-key'  # Secret reference
+        client_record['builder_space_id'] = f'client-{client_slug}-builder-space-id'  # Secret reference
+
+        # Note: Provisioner will create these secrets and populate with appropriate values:
+        # - SHARED mode: Copy values from darx-shared-builder-* template secrets
+        # - DEDICATED mode: Use client's own Builder.io space credentials
 
         # Insert into clients table
         result = supabase.table('clients').insert(client_record).execute()
