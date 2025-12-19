@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
 # Set working directory
+# Build timestamp: 2025-12-19T06:00 - Force rebuild for builder_space_mode fix
 WORKDIR /app
 
 # Install system dependencies
