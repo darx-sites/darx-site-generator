@@ -403,12 +403,18 @@ def store_client_data(form_data: dict) -> tuple:
         # Prepare client record
         tier = form_data.get('tier', 'entry')
 
+        # Determine builder_space_mode based on tier
+        # Entry tier ALWAYS uses SHARED mode (multi-tenant)
+        # Premium+ tiers use DEDICATED mode (own space)
+        builder_space_mode = 'SHARED' if tier == 'entry' else 'DEDICATED'
+
         client_record = {
             'client_name': form_data['client_name'],
             'client_slug': form_data['client_slug'],
             'contact_email': form_data['contact_email'],
             'industry': form_data.get('industry'),
             'builder_space_tier': tier,
+            'builder_space_mode': builder_space_mode,  # NEW: Set mode at creation
             'status': 'pending_provisioning',
             'website_type': form_data.get('website_type'),
         }
