@@ -408,6 +408,13 @@ def store_client_data(form_data: dict) -> tuple:
         # Premium+ tiers use DEDICATED mode (own space)
         builder_space_mode = 'SHARED' if tier == 'entry' else 'DEDICATED'
 
+        # Set GCP project ID based on mode
+        # SHARED mode: secrets stored in darx-shared-intake project
+        # DEDICATED mode: NULL for now, will be set by provisioner when project is created
+        #                  Pattern: darx-client-{client-slug}-{random-4-char-suffix}
+        #                  Example: darx-client-test-client-1-qsit
+        gcp_project_id = 'darx-shared-intake' if builder_space_mode == 'SHARED' else None
+
         client_record = {
             'client_name': form_data['client_name'],
             'client_slug': form_data['client_slug'],
@@ -415,16 +422,27 @@ def store_client_data(form_data: dict) -> tuple:
             'industry': form_data.get('industry'),
             'builder_space_tier': tier,
             'builder_space_mode': builder_space_mode,  # NEW: Set mode at creation
+            'gcp_project_id': gcp_project_id,  # NEW: Set GCP project for secret storage
             'status': 'pending_provisioning',
             'website_type': form_data.get('website_type'),
         }
 
-        # Only include Builder.io credentials for premium+ tiers
-        if tier != 'entry':
-            client_record['builder_public_key'] = form_data['builder_public_key']
-            client_record['builder_private_key'] = form_data['builder_private_key']
-            if form_data.get('builder_space_id'):
-                client_record['builder_space_id'] = form_data['builder_space_id']
+        # Handle Builder.io credentials based on mode
+        # BOTH modes store SECRET REFERENCES, not actual keys
+        client_slug = form_data['client_slug']
+
+        if builder_space_mode == 'SHARED':
+            # SHARED mode: References to secrets in darx-shared-intake project
+            # All SHARED clients use the same Builder.io space, so they share the same space ID
+            client_record['builder_public_key'] = f'client-{client_slug}-builder-public-key'  # Secret reference
+            client_record['builder_private_key'] = f'client-{client_slug}-builder-private-key'  # Secret reference
+            client_record['builder_space_id'] = 'darx-shared-builder-space-id'  # SAME for all SHARED clients
+        else:
+            # DEDICATED mode: References to secrets in client's own GCP project
+            # Each DEDICATED client has their own Builder.io space
+            client_record['builder_public_key'] = f'client-{client_slug}-builder-public-key'  # Secret reference
+            client_record['builder_private_key'] = f'client-{client_slug}-builder-private-key'  # Secret reference
+            client_record['builder_space_id'] = f'client-{client_slug}-builder-space-id'  # Secret reference
 
         # Insert into clients table
         result = supabase.table('clients').insert(client_record).execute()
