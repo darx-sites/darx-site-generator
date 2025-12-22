@@ -494,7 +494,7 @@ export default function Page({ params }: PageProps) {
             'data.urlPath': urlPath,
             'data.env': 'entry'
           });
-          url = `https://cdn.builder.io/api/v3/content/client_page?apiKey=${apiKey}&query=${encodeURIComponent(query)}&cachebust=true&_=${Date.now()}`;
+          url = `https://cdn.builder.io/api/v3/content/client-page?apiKey=${apiKey}&query=${encodeURIComponent(query)}&cachebust=true&_=${Date.now()}`;
         } else {
           // DEDICATED MODE: Traditional URL matching
           url = `https://cdn.builder.io/api/v3/content/page?apiKey=${apiKey}&url=${encodeURIComponent(urlPath)}&cachebust=true&_=${Date.now()}`;
@@ -563,7 +563,7 @@ export default function Page({ params }: PageProps) {
   // Render the Builder.io content
   return (
     <BuilderComponent
-      model={process.env.NEXT_PUBLIC_BUILDER_SPACE_MODE === 'SHARED' ? 'client_page' : 'page'}
+      model={process.env.NEXT_PUBLIC_BUILDER_SPACE_MODE === 'SHARED' ? 'client-page' : 'page'}
       content={content}
     />
   );
