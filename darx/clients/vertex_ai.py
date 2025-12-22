@@ -148,8 +148,8 @@ def _build_system_prompt(industry: str, features: List[str]) -> str:
 CRITICAL SECURITY REQUIREMENT - EXACT DEPENDENCY VERSIONS:
 You MUST use these EXACT versions for security (CVE-2025-66478, CVE-2025-55182, CVE-2025-55184, CVE-2025-55183 patches):
 - next: "16.0.10" (REQUIRED - patched for CVE-2025-66478, CVE-2025-55184, CVE-2025-55183)
-- react: "19.2.1" (REQUIRED - patched for CVE-2025-55182)
-- react-dom: "19.2.1" (REQUIRED)
+- react: "18.3.1" (REQUIRED - compatible with lucide-react)
+- react-dom: "18.3.1" (REQUIRED)
 
 CRITICAL REQUIREMENTS:
 1. Generate COMPLETE, working code (no placeholders, no "// TODO", no "...rest of component")
@@ -229,7 +229,7 @@ WRONG - DO NOT DO THIS:
   ]
 }
 
-REQUIRED FILES (Generate these 11 essential files):
+REQUIRED FILES (Generate these 12 essential files):
 1. package.json - Dependencies (Next.js 16, React 19, TypeScript, Tailwind, Framer Motion, Builder.io)
 2. tsconfig.json - TypeScript configuration with path aliases (CRITICAL for @/ imports)
 3. postcss.config.js - PostCSS configuration (CRITICAL for Tailwind CSS compilation)
@@ -241,6 +241,7 @@ REQUIRED FILES (Generate these 11 essential files):
 9. app/globals.css - Tailwind directives
 10. tailwind.config.ts - Tailwind configuration
 11. next.config.js - Next.js configuration
+12. middleware.ts - Multi-tenant client slug extraction (REQUIRED for SHARED Builder.io spaces)
 
 CRITICAL:
 - DO NOT generate app/page.tsx - use app/[[...page]]/page.tsx ONLY so Builder.io handles ALL routes
@@ -262,6 +263,103 @@ export default function NotFound() {
   );
 }
 ```
+
+MIDDLEWARE TEMPLATE - middleware.ts:
+This file extracts the client slug from the hostname for multi-tenant Builder.io content isolation.
+CRITICAL: This is REQUIRED for SHARED Builder.io spaces to work correctly!
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+
+export function middleware(request: NextRequest) {
+  const host = request.headers.get('host') || '';
+
+  // Extract client_slug from hostname
+  // Format: {client-slug}.darx.site
+  const clientSlug = extractClientSlug(host);
+
+  if (!clientSlug) {
+    return new NextResponse('Invalid hostname', { status: 400 });
+  }
+
+  // Inject client_slug into request headers for downstream use
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-client-slug', clientSlug);
+
+  return NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  });
+}
+
+function extractClientSlug(host: string): string | null {
+  // acme.darx.site → acme
+  // acme-company.darx.site → acme-company
+  // localhost:3000 → development (for local dev)
+  // test-client-14.vercel.app → test-client-14
+  // test-client-14-hash123-team.vercel.app → test-client-14 (Vercel preview)
+
+  if (host.includes('localhost')) {
+    return process.env.NEXT_PUBLIC_CLIENT_SLUG || 'development';
+  }
+
+  const parts = host.split('.');
+  if (parts.length < 3) {
+    return null;
+  }
+
+  let subdomain = parts[0];
+
+  // Handle Vercel preview URLs: project-hash-team.vercel.app
+  // Extract just the project name (everything before first hash-like segment)
+  if (host.includes('.vercel.app')) {
+    // Vercel preview URLs have format: {project}-{hash}-{team}.vercel.app
+    // Production URLs have format: {project}.vercel.app
+    // We need to extract just the {project} part
+
+    // Split subdomain by hyphens
+    const segments = subdomain.split('-');
+
+    // If more than 3 segments, it's likely a preview URL with hash
+    // Example: test-client-14-kszvvxbwu-digitalarchitexs-projects
+    // We want: test-client-14
+    if (segments.length > 3) {
+      // Find where the hash-like segment starts (8+ char alphanumeric string)
+      const hashIndex = segments.findIndex(seg =>
+        seg.length >= 8 && /^[a-z0-9]+$/.test(seg)
+      );
+
+      if (hashIndex > 0) {
+        // Take everything before the hash
+        subdomain = segments.slice(0, hashIndex).join('-');
+      }
+    }
+  }
+
+  // Validate slug format
+  if (!/^[a-z0-9-]+$/.test(subdomain)) {
+    return null;
+  }
+
+  return subdomain;
+}
+
+export const config = {
+  matcher: '/:path*',
+};
+```
+
+CRITICAL: The middleware.ts file is REQUIRED for multi-tenant setups:
+1. It extracts the client slug from the hostname (subdomain)
+2. Handles both production URLs (client.darx.site) and Vercel preview URLs
+3. Vercel preview URL format: project-hash-team.vercel.app → extracts "project"
+4. Injects x-client-slug header for use in API routes and page components
+5. Returns 400 error for invalid hostnames (security)
+
+This middleware enables:
+- Multi-tenant content isolation in SHARED Builder.io spaces
+- Correct client slug extraction from various URL formats
+- Security validation of hostname format
 
 TYPESCRIPT CONFIGURATION TEMPLATE - tsconfig.json:
 This file configures TypeScript and enables the @/ path alias. This is CRITICAL for imports to work.
@@ -492,24 +590,25 @@ You MUST use these EXACT versions (NOT ranges like ^14.0.0):
 {
   "dependencies": {
     "next": "16.0.10",
-    "react": "19.2.1",
-    "react-dom": "19.2.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "@builder.io/react": "^4.0.0",
     "@builder.io/sdk": "^2.0.0",
     "framer-motion": "^11.0.0",
+    "lucide-react": "^0.263.1",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.3.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
     "postcss": "^8.4.0",
     "autoprefixer": "^10.4.0"
   },
   "engines": {"node": "22.x"}
 }
-# Updated: 2025-12-14 13:06 UTC - Node.js 22.x for compatibility
+# Updated: 2025-12-19 23:30 UTC - React 18.3.1 for lucide-react compatibility
 
 
 CRITICAL: Do NOT use version ranges for next, react, or react-dom. Use EXACT versions as shown above.
