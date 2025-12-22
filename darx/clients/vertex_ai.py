@@ -488,10 +488,10 @@ export default function Page({ params }: PageProps) {
         let url: string;
 
         if (spaceMode === 'SHARED' && clientSlug) {
-          // SHARED MODE: Query with client_slug filter for multi-tenant isolation
+          // SHARED MODE: Query with clientSlug filter for multi-tenant isolation
           const query = JSON.stringify({
-            'data.client_slug': clientSlug,
-            'data.url_path': urlPath,
+            'data.clientSlug': clientSlug,
+            'data.urlPath': urlPath,
             'data.env': 'entry'
           });
           url = `https://cdn.builder.io/api/v3/content/client_page?apiKey=${apiKey}&query=${encodeURIComponent(query)}&cachebust=true&_=${Date.now()}`;
@@ -508,9 +508,9 @@ export default function Page({ params }: PageProps) {
           const data = await response.json();
 
           if (data.results && data.results.length > 0) {
-            // SECURITY: For SHARED mode, verify client_slug matches
+            // SECURITY: For SHARED mode, verify clientSlug matches
             if (spaceMode === 'SHARED' && clientSlug) {
-              const contentSlug = data.results[0]?.data?.client_slug;
+              const contentSlug = data.results[0]?.data?.clientSlug;
               if (contentSlug !== clientSlug) {
                 console.error('SECURITY: Client slug mismatch');
                 setLoading(false);

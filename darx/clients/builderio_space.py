@@ -172,6 +172,196 @@ def create_space(
         }
 
 
+def delete_space(
+    space_id: str,
+    private_key: str
+) -> Dict[str, Any]:
+    """
+    Delete a Builder.io Space
+
+    ⚠️  ENTERPRISE ONLY: This function requires a Builder.io Enterprise account.
+    Pro/Team accounts will receive 401 "Invalid key" errors.
+
+    For non-Enterprise accounts, use archive_space_content() instead to mark
+    all content as deleted while preserving the Space itself.
+
+    Args:
+        space_id: The Space ID to delete
+        private_key: Space private key or org private key
+
+    Returns:
+        {
+            'success': bool,
+            'space_id': str,
+            'error': str (if failed)
+        }
+    """
+
+    if not private_key:
+        return {
+            'success': False,
+            'error': 'Private key not provided'
+        }
+
+    try:
+        # Builder.io does not have a public space deletion API endpoint
+        # This would need to be implemented via their admin API
+        # For now, return a message indicating manual deletion is required
+
+        return {
+            'success': False,
+            'error': 'Space deletion requires Enterprise account and manual action via Builder.io admin panel. Use archive_space_content() to mark content for deletion.'
+        }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to delete space: {str(e)}'
+        }
+
+
+def archive_space_content(
+    space_id: str,
+    private_key: str
+) -> Dict[str, Any]:
+    """
+    Archive all content in a Builder.io Space by marking it as deleted
+
+    Available for ALL account tiers (Pro/Team/Enterprise).
+    This does not delete the Space itself, but marks all content entries
+    with a deletion timestamp for cleanup purposes.
+
+    Args:
+        space_id: The Space ID
+        private_key: Space private key
+
+    Returns:
+        {
+            'success': bool,
+            'archived_count': int,
+            'models_processed': List[str],
+            'error': str (if failed)
+        }
+    """
+
+    if not private_key:
+        return {
+            'success': False,
+            'error': 'Private key not provided'
+        }
+
+    try:
+        import time
+        from datetime import datetime
+
+        # Common Builder.io models to process
+        models_to_archive = ['page', 'section', 'blog-post', 'product', 'symbol']
+
+        archived_count = 0
+        models_processed = []
+        errors = []
+
+        for model in models_to_archive:
+            try:
+                # Get all content for this model
+                content_result = get_content(
+                    public_key=private_key,  # Can use private key for read operations
+                    model=model,
+                    limit=100
+                )
+
+                if not content_result['success']:
+                    continue
+
+                results = content_result.get('results', [])
+
+                for content_entry in results:
+                    content_id = content_entry.get('id')
+
+                    if not content_id:
+                        continue
+
+                    # Update content with archive marker
+                    data = content_entry.get('data', {})
+                    data['__archived_at'] = datetime.now().isoformat()
+                    data['__archived_for_deletion'] = True
+
+                    update_result = update_content(
+                        private_key=private_key,
+                        model=model,
+                        content_id=content_id,
+                        data=data
+                    )
+
+                    if update_result['success']:
+                        archived_count += 1
+                    else:
+                        errors.append(f"{model}/{content_id}: {update_result.get('error')}")
+
+                models_processed.append(model)
+                time.sleep(0.1)  # Rate limiting
+
+            except Exception as e:
+                errors.append(f"Error processing model {model}: {str(e)}")
+
+        return {
+            'success': True,
+            'archived_count': archived_count,
+            'models_processed': models_processed,
+            'errors': errors if errors else None
+        }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to archive space content: {str(e)}'
+        }
+
+
+def list_spaces(org_private_key: str = None) -> Dict[str, Any]:
+    """
+    List all Builder.io Spaces in an organization
+
+    ⚠️  ENTERPRISE ONLY: This function requires a Builder.io Enterprise account
+    with organization-level API access.
+
+    Args:
+        org_private_key: Organization private key (defaults to BUILDER_ORG_PRIVATE_KEY env var)
+
+    Returns:
+        {
+            'success': bool,
+            'spaces': List[Dict],
+            'count': int,
+            'error': str (if failed)
+        }
+    """
+
+    key = org_private_key or BUILDER_ORG_PRIVATE_KEY
+
+    if not key:
+        return {
+            'success': False,
+            'error': 'Organization private key not configured'
+        }
+
+    try:
+        # Builder.io does not have a documented spaces listing endpoint
+        # This would require Enterprise API access
+        # For now, return a message indicating manual retrieval is required
+
+        return {
+            'success': False,
+            'error': 'Space listing requires Enterprise account and is not available via public API. Spaces must be tracked manually in Supabase.'
+        }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to list spaces: {str(e)}'
+        }
+
+
 def register_components(
     space_public_key: str,
     components: list

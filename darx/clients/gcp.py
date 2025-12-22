@@ -9,31 +9,13 @@ import io
 from datetime import datetime
 from google.cloud import storage
 from typing import Dict, List, Any, Optional
-from supabase import create_client, Client
+
+# Import Supabase client from darx_core
+from darx_core import get_supabase_client
 
 # Configuration
 PROJECT_ID = os.getenv('GCP_PROJECT', 'sylvan-journey-474401-f9')
 BUCKET_NAME = os.getenv('GCS_BUCKET', 'darx-generated-sites')
-
-# Supabase configuration
-SUPABASE_URL = os.getenv('SUPABASE_URL')
-SUPABASE_KEY = os.getenv('SUPABASE_KEY')
-
-# Global Supabase client
-_supabase_client = None
-
-
-def get_supabase_client() -> Optional[Client]:
-    """Get or create Supabase client"""
-    global _supabase_client
-
-    if _supabase_client is None:
-        if SUPABASE_URL and SUPABASE_KEY:
-            _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        else:
-            print("⚠️  Supabase not configured (SUPABASE_URL or SUPABASE_KEY missing)")
-
-    return _supabase_client
 
 
 def store_backup(
@@ -156,3 +138,163 @@ def log_generation(
             print("   ⚠️  Supabase not available, logged to Cloud Logging only")
     except Exception as e:
         print(f"   ⚠️  Failed to log to Supabase: {str(e)}")
+
+
+def list_backups(client_slug: str) -> Dict[str, Any]:
+    """
+    List all GCS backups for a specific client.
+
+    Args:
+        client_slug: Client slug (e.g., 'acme-corp')
+
+    Returns:
+        {
+            'success': bool,
+            'backups': List[Dict],
+            'count': int,
+            'error': str (if failed)
+        }
+    """
+
+    try:
+        storage_client = storage.Client(project=PROJECT_ID)
+        bucket = storage_client.bucket(BUCKET_NAME)
+
+        # List all blobs with prefix projects/{client_slug}/
+        prefix = f"projects/{client_slug}/"
+        blobs = bucket.list_blobs(prefix=prefix)
+
+        backups = []
+        for blob in blobs:
+            backups.append({
+                'name': blob.name,
+                'size_bytes': blob.size,
+                'created_at': blob.time_created.isoformat() if blob.time_created else None,
+                'updated_at': blob.updated.isoformat() if blob.updated else None,
+                'url': f"gs://{BUCKET_NAME}/{blob.name}",
+                'public_url': blob.public_url if blob.public_url else None
+            })
+
+        # Sort by created_at descending (newest first)
+        backups.sort(key=lambda x: x['created_at'] or '', reverse=True)
+
+        return {
+            'success': True,
+            'backups': backups,
+            'count': len(backups)
+        }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to list backups: {str(e)}'
+        }
+
+
+def get_latest_backup(client_slug: str) -> Dict[str, Any]:
+    """
+    Get the most recent backup for a client.
+
+    Args:
+        client_slug: Client slug (e.g., 'acme-corp')
+
+    Returns:
+        {
+            'success': bool,
+            'backup': Dict,
+            'error': str (if failed)
+        }
+    """
+
+    try:
+        result = list_backups(client_slug)
+
+        if not result['success']:
+            return result
+
+        backups = result.get('backups', [])
+
+        if not backups:
+            return {
+                'success': False,
+                'error': f'No backups found for {client_slug}'
+            }
+
+        # Backups are already sorted by created_at descending
+        latest = backups[0]
+
+        return {
+            'success': True,
+            'backup': latest
+        }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to get latest backup: {str(e)}'
+        }
+
+
+def delete_backups(client_slug: str, keep_latest: bool = True) -> Dict[str, Any]:
+    """
+    Delete GCS backups for a client.
+
+    Args:
+        client_slug: Client slug (e.g., 'acme-corp')
+        keep_latest: If True, keeps the most recent backup for recovery (default: True)
+
+    Returns:
+        {
+            'success': bool,
+            'deleted_count': int,
+            'kept_backup': str (if keep_latest=True),
+            'error': str (if failed)
+        }
+    """
+
+    try:
+        storage_client = storage.Client(project=PROJECT_ID)
+        bucket = storage_client.bucket(BUCKET_NAME)
+
+        # List all backups
+        result = list_backups(client_slug)
+
+        if not result['success']:
+            return result
+
+        backups = result.get('backups', [])
+
+        if not backups:
+            return {
+                'success': True,
+                'deleted_count': 0,
+                'note': f'No backups found for {client_slug}'
+            }
+
+        # Determine which backups to delete
+        backups_to_delete = backups[1:] if keep_latest else backups
+        kept_backup = backups[0]['name'] if keep_latest and backups else None
+
+        deleted_count = 0
+        errors = []
+
+        for backup in backups_to_delete:
+            try:
+                blob = bucket.blob(backup['name'])
+                blob.delete()
+                deleted_count += 1
+            except Exception as e:
+                errors.append(f"Failed to delete {backup['name']}: {str(e)}")
+
+        return {
+            'success': True,
+            'deleted_count': deleted_count,
+            'kept_backup': kept_backup,
+            'errors': errors if errors else None
+        }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to delete backups: {str(e)}'
+        }

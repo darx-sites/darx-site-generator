@@ -210,8 +210,8 @@ def push_to_github(
             parents=[parent_commit]
         )
 
-        # Update branch reference
-        ref.edit(commit.sha)
+        # Update branch reference (force=True to handle non-fast-forward pushes)
+        ref.edit(commit.sha, force=True)
 
         return {
             'success': True,
@@ -333,4 +333,187 @@ def update_file_content(
         return {
             'success': False,
             'error': f'Failed to update file: {str(e)}'
+        }
+
+
+def list_github_repos(org: str) -> Dict[str, Any]:
+    """
+    List all repositories in a GitHub organization.
+
+    Args:
+        org: Organization name (e.g., 'darx-sites')
+
+    Returns:
+        {
+            'success': bool,
+            'repos': List[Dict],
+            'count': int,
+            'error': str (if failed)
+        }
+    """
+
+    try:
+        github = get_github_client()
+
+        try:
+            organization = github.get_organization(org)
+            repos = organization.get_repos()
+
+            repo_list = []
+            for repo in repos:
+                repo_list.append({
+                    'name': repo.name,
+                    'full_name': repo.full_name,
+                    'html_url': repo.html_url,
+                    'private': repo.private,
+                    'archived': repo.archived,
+                    'created_at': repo.created_at.isoformat() if repo.created_at else None,
+                    'updated_at': repo.updated_at.isoformat() if repo.updated_at else None,
+                    'pushed_at': repo.pushed_at.isoformat() if repo.pushed_at else None,
+                    'size': repo.size,
+                    'default_branch': repo.default_branch
+                })
+
+            return {
+                'success': True,
+                'repos': repo_list,
+                'count': len(repo_list)
+            }
+
+        except GithubException as e:
+            if e.status == 404:
+                return {
+                    'success': False,
+                    'error': f'Organization not found: {org}'
+                }
+            return {
+                'success': False,
+                'error': f'GitHub API error: {str(e)}'
+            }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+def archive_github_repo(
+    org: str,
+    repo_name: str
+) -> Dict[str, Any]:
+    """
+    Archive a GitHub repository by renaming with ARCHIVED- prefix and making private.
+
+    Args:
+        org: Organization name
+        repo_name: Repository name
+
+    Returns:
+        {
+            'success': bool,
+            'original_name': str,
+            'archived_name': str,
+            'repo_url': str,
+            'error': str (if failed)
+        }
+    """
+
+    try:
+        github = get_github_client()
+        repo = github.get_repo(f"{org}/{repo_name}")
+
+        # Generate archived name
+        archived_name = f"ARCHIVED-{repo_name}"
+
+        # Check if already has ARCHIVED- prefix
+        if repo_name.startswith('ARCHIVED-'):
+            return {
+                'success': True,
+                'original_name': repo_name,
+                'archived_name': repo_name,
+                'repo_url': repo.html_url,
+                'note': 'Repository already archived'
+            }
+
+        # Rename repository
+        repo.edit(name=archived_name)
+
+        # Make repository private
+        repo.edit(private=True)
+
+        # Mark as archived in GitHub (prevents pushes)
+        repo.edit(archived=True)
+
+        # Get updated repo reference
+        archived_repo = github.get_repo(f"{org}/{archived_name}")
+
+        return {
+            'success': True,
+            'original_name': repo_name,
+            'archived_name': archived_name,
+            'repo_url': archived_repo.html_url
+        }
+
+    except GithubException as e:
+        if e.status == 404:
+            return {
+                'success': False,
+                'error': f'Repository not found: {org}/{repo_name}'
+            }
+        return {
+            'success': False,
+            'error': f'GitHub API error: {str(e)}'
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+def delete_github_repo(
+    org: str,
+    repo_name: str
+) -> Dict[str, Any]:
+    """
+    Delete a GitHub repository.
+
+    Args:
+        org: Organization name
+        repo_name: Repository name
+
+    Returns:
+        {
+            'success': bool,
+            'error': str (if failed)
+        }
+    """
+
+    try:
+        github = get_github_client()
+        repo = github.get_repo(f"{org}/{repo_name}")
+
+        # Delete repository
+        repo.delete()
+
+        return {
+            'success': True,
+            'repo': f"{org}/{repo_name}"
+        }
+
+    except GithubException as e:
+        if e.status == 404:
+            return {
+                'success': False,
+                'error': f'Repository not found: {org}/{repo_name}'
+            }
+        return {
+            'success': False,
+            'error': f'GitHub API error: {str(e)}'
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e)
         }

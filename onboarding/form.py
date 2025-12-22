@@ -27,15 +27,13 @@ TOKEN_EXPIRY_HOURS = 24
 
 def get_supabase():
     """Get Supabase client for token storage"""
-    from supabase import create_client
+    from darx_core import get_supabase_client
 
-    supabase_url = os.getenv('SUPABASE_URL')
-    supabase_key = os.getenv('SUPABASE_KEY')
-
-    if not supabase_url or not supabase_key:
+    client = get_supabase_client()
+    if not client:
         raise Exception("Supabase credentials not configured")
 
-    return create_client(supabase_url, supabase_key)
+    return client
 
 
 def generate_onboarding_token(client_slug: str) -> str:
@@ -124,17 +122,14 @@ def check_slug_availability(client_slug: str) -> tuple:
         Tuple of (is_available: bool, error_message: str or None)
     """
     try:
-        from supabase import create_client
+        from darx_core import get_supabase_client
 
-        supabase_url = os.getenv('SUPABASE_URL')
-        supabase_key = os.getenv('SUPABASE_KEY')
+        supabase = get_supabase_client()
 
-        if not supabase_url or not supabase_key:
+        if not supabase:
             # If Supabase not configured, allow it (dev mode)
             print("Warning: Supabase not configured, skipping slug uniqueness check")
             return True, None
-
-        supabase = create_client(supabase_url, supabase_key)
 
         # Query for existing client with this slug in clients table
         result = supabase.table('clients')\
@@ -388,17 +383,14 @@ def store_client_data(form_data: dict) -> tuple:
     """
     try:
         # Import Supabase client
-        from supabase import create_client
+        from darx_core import get_supabase_client
 
-        supabase_url = os.getenv('SUPABASE_URL')
-        supabase_key = os.getenv('SUPABASE_KEY')
+        supabase = get_supabase_client()
 
-        if not supabase_url or not supabase_key:
+        if not supabase:
             print("Warning: Supabase credentials not configured")
             # For now, just log and continue (will be properly implemented later)
             return True, "Client data recorded (Supabase not configured)"
-
-        supabase = create_client(supabase_url, supabase_key)
 
         # Prepare client record
         tier = form_data.get('tier', 'entry')

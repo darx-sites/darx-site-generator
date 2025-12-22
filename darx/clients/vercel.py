@@ -70,15 +70,29 @@ def deploy_to_vercel(
         build_result = check_deployment_status(deployment_id, headers, max_wait_seconds=300)
 
         if not build_result['success']:
-            # Build failed - include error details
+            # Build failed - include error details with enhanced context
             error_msg = build_result.get('error', 'Build failed')
             build_logs = build_result.get('build_logs', '')
+            state = build_result.get('state', 'UNKNOWN')
 
-            full_error = f"{error_msg}"
+            # Structure error with context
+            full_error = [
+                f"Vercel build failed (state: {state})",
+                f"Error: {error_msg}",
+            ]
+
             if build_logs:
-                full_error += f"\n\nBuild logs:\n{build_logs}"
+                # Extract key errors from logs
+                log_lines = build_logs.split('\n')
+                error_lines = [line for line in log_lines if 'error' in line.lower() or 'failed' in line.lower()]
 
-            raise Exception(full_error)
+                full_error.append("\nBuild Errors:")
+                full_error.extend(f"  {line}" for line in error_lines[:10])  # Top 10 errors
+
+                if len(error_lines) > 10:
+                    full_error.append(f"  ... and {len(error_lines) - 10} more errors")
+
+            raise Exception('\n'.join(full_error))
 
         staging_url = f"https://{project_name}.vercel.app"
         production_url = f"https://{project_name}.darx.site"  # Custom domain (needs DNS)
@@ -129,8 +143,7 @@ def _get_or_create_project(project_name: str, github_repo: str, headers: Dict) -
         "buildCommand": "npm run build",
         "devCommand": "npm run dev",
         "installCommand": "npm install",
-        "outputDirectory": ".next",
-        "ssoProtection": None  # Disable SSO protection for easier testing
+        "outputDirectory": ".next"
     }
 
     response = requests.post(url, headers=headers, json=payload)
@@ -145,9 +158,9 @@ def _get_or_create_project(project_name: str, github_repo: str, headers: Dict) -
 def _set_env_vars(project_id: str, env_vars: Dict[str, str], headers: Dict):
     """Set environment variables for project"""
 
-    url = f"https://api.vercel.com/v10/projects/{project_id}/env"
+    base_url = f"https://api.vercel.com/v10/projects/{project_id}/env"
     if VERCEL_TEAM_ID:
-        url += f"?teamId={VERCEL_TEAM_ID}"
+        base_url += f"?teamId={VERCEL_TEAM_ID}"
 
     for key, value in env_vars.items():
         # Skip None values - Vercel API requires string values
@@ -158,17 +171,42 @@ def _set_env_vars(project_id: str, env_vars: Dict[str, str], headers: Dict):
         # Convert to string to ensure API compatibility
         value_str = str(value)
 
-        payload = {
-            "key": key,
-            "value": value_str,
-            "type": "encrypted",
-            "target": ["production", "preview", "development"]
-        }
+        # First, get existing env vars to check if it exists
+        get_response = requests.get(base_url, headers=headers)
+        existing_vars = get_response.json().get('envs', []) if get_response.status_code == 200 else []
 
-        response = requests.post(url, headers=headers, json=payload)
+        # Find existing var with this key
+        existing_var = next((var for var in existing_vars if var.get('key') == key), None)
 
-        if response.status_code not in (200, 201):
-            print(f"   ⚠️  Failed to set env var {key}: {response.text}")
+        if existing_var:
+            # Update existing variable
+            env_id = existing_var['id']
+            update_url = f"{base_url}/{env_id}"
+            payload = {
+                "value": value_str,
+                "type": "encrypted",
+                "target": ["production", "preview", "development"]
+            }
+            response = requests.patch(update_url, headers=headers, json=payload)
+
+            if response.status_code in (200, 201):
+                print(f"   ✅ Updated env var {key}")
+            else:
+                print(f"   ⚠️  Failed to update env var {key}: {response.text}")
+        else:
+            # Create new variable
+            payload = {
+                "key": key,
+                "value": value_str,
+                "type": "encrypted",
+                "target": ["production", "preview", "development"]
+            }
+            response = requests.post(base_url, headers=headers, json=payload)
+
+            if response.status_code in (200, 201):
+                print(f"   ✅ Created env var {key}")
+            else:
+                print(f"   ⚠️  Failed to create env var {key}: {response.text}")
 
 
 def _trigger_deployment(project_id: str, github_repo: str, repo_id: int, headers: Dict) -> Dict:
@@ -321,6 +359,173 @@ def _fetch_build_logs(deployment_id: str, headers: Dict) -> str:
 
     except Exception as e:
         return f"Error fetching logs: {str(e)}"
+
+
+def delete_vercel_project(project_id: str) -> Dict[str, Any]:
+    """
+    Delete a Vercel project.
+
+    Args:
+        project_id: Vercel project ID or name
+
+    Returns:
+        {
+            'success': bool,
+            'project_id': str,
+            'error': str (if failed)
+        }
+    """
+
+    if not VERCEL_TOKEN:
+        return {
+            'success': False,
+            'error': 'VERCEL_TOKEN not configured'
+        }
+
+    try:
+        headers = {
+            'Authorization': f'Bearer {VERCEL_TOKEN}',
+            'Content-Type': 'application/json'
+        }
+
+        url = f"https://api.vercel.com/v9/projects/{project_id}"
+        if VERCEL_TEAM_ID:
+            url += f"?teamId={VERCEL_TEAM_ID}"
+
+        response = requests.delete(url, headers=headers)
+
+        if response.status_code in (200, 204):
+            return {
+                'success': True,
+                'project_id': project_id
+            }
+        elif response.status_code == 404:
+            return {
+                'success': True,
+                'project_id': project_id,
+                'note': 'Project not found (already deleted)'
+            }
+        else:
+            return {
+                'success': False,
+                'error': f'Failed to delete project: {response.status_code} - {response.text}'
+            }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to delete Vercel project: {str(e)}'
+        }
+
+
+def list_vercel_projects() -> Dict[str, Any]:
+    """
+    List all Vercel projects.
+
+    Returns:
+        {
+            'success': bool,
+            'projects': List[Dict],
+            'error': str (if failed)
+        }
+    """
+
+    if not VERCEL_TOKEN:
+        return {
+            'success': False,
+            'error': 'VERCEL_TOKEN not configured'
+        }
+
+    try:
+        headers = {
+            'Authorization': f'Bearer {VERCEL_TOKEN}',
+            'Content-Type': 'application/json'
+        }
+
+        url = "https://api.vercel.com/v9/projects"
+        if VERCEL_TEAM_ID:
+            url += f"?teamId={VERCEL_TEAM_ID}"
+
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            data = response.json()
+            projects = data.get('projects', [])
+
+            return {
+                'success': True,
+                'projects': projects,
+                'count': len(projects)
+            }
+        else:
+            return {
+                'success': False,
+                'error': f'Failed to list projects: {response.status_code} - {response.text}'
+            }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to list Vercel projects: {str(e)}'
+        }
+
+
+def get_vercel_project_details(project_id: str) -> Dict[str, Any]:
+    """
+    Get detailed information about a Vercel project.
+
+    Args:
+        project_id: Vercel project ID or name
+
+    Returns:
+        {
+            'success': bool,
+            'project': Dict,
+            'error': str (if failed)
+        }
+    """
+
+    if not VERCEL_TOKEN:
+        return {
+            'success': False,
+            'error': 'VERCEL_TOKEN not configured'
+        }
+
+    try:
+        headers = {
+            'Authorization': f'Bearer {VERCEL_TOKEN}',
+            'Content-Type': 'application/json'
+        }
+
+        url = f"https://api.vercel.com/v9/projects/{project_id}"
+        if VERCEL_TEAM_ID:
+            url += f"?teamId={VERCEL_TEAM_ID}"
+
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            project = response.json()
+
+            return {
+                'success': True,
+                'project': project
+            }
+        elif response.status_code == 404:
+            return {
+                'success': False,
+                'error': f'Project not found: {project_id}'
+            }
+        else:
+            return {
+                'success': False,
+                'error': f'Failed to get project: {response.status_code} - {response.text}'
+            }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to get Vercel project details: {str(e)}'
+        }
 
 
 def add_custom_domain_to_project(
