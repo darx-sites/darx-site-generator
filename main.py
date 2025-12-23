@@ -286,6 +286,54 @@ def generate_site():
     except Exception as e:
         return jsonify({'error': f'Invalid request: {str(e)}'}), 400
 
+    # CRITICAL FIX: Workflow validation (Fix #4)
+    # Check if client exists and is active before allowing site generation
+    try:
+        from darx_core import get_supabase_client
+        supabase = get_supabase_client()
+
+        if supabase:
+            # Query for client record using client_slug (which is project_name)
+            client_check = supabase.table('clients')\
+                .select('client_slug, name, status, onboarding_completed')\
+                .eq('client_slug', project_name)\
+                .execute()
+
+            if not client_check.data or len(client_check.data) == 0:
+                return jsonify({
+                    'error': 'Client not found',
+                    'message': f'No client record found for slug: {project_name}',
+                    'recommendation': 'Please onboard the client first using the client_onboarding tool',
+                    'required_step': 'onboard_client',
+                    'blocked': True
+                }), 400
+
+            client_record = client_check.data[0]
+
+            # Check if client is in active status
+            if client_record.get('status') != 'active':
+                current_status = client_record.get('status', 'unknown')
+                return jsonify({
+                    'error': 'Client not ready for site generation',
+                    'message': f'Client status is "{current_status}" (expected "active")',
+                    'current_status': current_status,
+                    'client_slug': project_name,
+                    'recommendation': {
+                        'pending_provisioning': 'Wait for provisioning workflow to complete',
+                        'pending_onboarding': 'Complete onboarding first',
+                        'inactive': 'Client has been deactivated',
+                        'unknown': 'Check client status in Supabase'
+                    }.get(current_status, 'Contact support'),
+                    'blocked': True
+                }), 400
+
+            print(f"✅ Client validation passed: {project_name} (status: active)")
+
+    except Exception as e:
+        print(f"⚠️  Client validation check failed: {e}")
+        # Continue anyway if validation fails - this is a safety feature, not critical
+        # But log the warning so we know validation isn't working
+
     print(f"\n🚀 Starting generation for: {project_name}")
     print(f"   Industry: {industry}")
     print(f"   Features: {', '.join(features)}")
