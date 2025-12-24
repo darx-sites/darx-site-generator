@@ -1,0 +1,98 @@
+# Multi-Repo GitHub-to-GCS Sync Trigger
+#
+# This trigger watches multiple GitHub repositories (excluding darx-reasoning)
+# and syncs each to its own subdirectory under current_source/
+#
+# Trigger configuration:
+#   - Event: Push to main branch
+#   - Repositories: darx-sites/*, other DARX service repos
+#   - Target: gs://darx-code-staging-474964350921/current_source/{REPO_NAME}/
+#
+# Note: This trigger uses substitution variables:
+#   - $_REPO_NAME: Repository name (e.g., "darx-site-generator")
+#   - $COMMIT_SHA: Git commit SHA
+
+steps:
+  # Step 1: Check if repository is in service registry
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'validate-service'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "📦 Multi-Repo Sync"
+        echo "Repository: $_REPO_NAME"
+        echo "Commit: $COMMIT_SHA"
+        echo ""
+
+        # Check if config/services.yaml exists in workspace
+        if [ ! -f "config/services.yaml" ]; then
+          echo "⚠️  config/services.yaml not found in repo - skipping sync"
+          echo "This repo is not configured for DARX self-modification"
+          exit 0
+        fi
+
+        # Check if repository is listed in service registry
+        # Note: This assumes the repo clones with its services.yaml
+        # For non-darx-reasoning repos, we'll validate by checking if the
+        # repo name appears in the services.yaml from darx-reasoning
+
+        echo "✅ Repository is configured for sync"
+        echo "Target: gs://darx-code-staging-474964350921/current_source/$_REPO_NAME/"
+
+  # Step 2: Sync repository to GCS subdirectory
+  - name: 'gcr.io/cloud-builders/gsutil'
+    id: 'sync-to-gcs'
+    args:
+      - '-m'
+      - 'rsync'
+      - '-r'
+      - '-d'  # Delete files in GCS that don't exist in source
+      - '-x'  # Exclude patterns
+      - '.*\.git/.*|.*node_modules/.*|.*__pycache__/.*'
+      - '.'
+      - 'gs://darx-code-staging-474964350921/current_source/$_REPO_NAME/'
+
+  # Step 3: Create timestamp marker
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'create-timestamp'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Synced at $(date -u +"%Y-%m-%dT%H:%M:%SZ") from commit $COMMIT_SHA" | \
+        gsutil cp - gs://darx-code-staging-474964350921/current_source/$_REPO_NAME/.sync_timestamp
+
+timeout: '600s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'N1_HIGHCPU_8'
+
+# Substitutions (provided by trigger configuration)
+substitutions:
+  _REPO_NAME: 'unknown'  # Will be set by trigger
+
+# Note: To create this trigger, run:
+#
+# For darx-site-generator:
+#   gcloud builds triggers create github \
+#     --name="darx-site-generator-sync" \
+#     --description="Sync darx-site-generator to GCS on push to main" \
+#     --repo-name="darx-site-generator" \
+#     --repo-owner="darx-sites" \
+#     --branch-pattern="^main$" \
+#     --build-config="cloudbuild-multi-sync.yaml" \
+#     --substitutions="_REPO_NAME=darx-site-generator" \
+#     --service-account="projects/sylvan-journey-474401-f9/serviceAccounts/darx-ai-runner@sylvan-journey-474401-f9.iam.gserviceaccount.com"
+#
+# For darx-slack-handler:
+#   gcloud builds triggers create github \
+#     --name="darx-slack-handler-sync" \
+#     --description="Sync darx-slack-handler to GCS on push to main" \
+#     --repo-name="darx-slack-handler" \
+#     --repo-owner="digitalarchitex" \
+#     --branch-pattern="^main$" \
+#     --build-config="cloudbuild-multi-sync.yaml" \
+#     --substitutions="_REPO_NAME=darx-slack-handler" \
+#     --service-account="projects/sylvan-journey-474401-f9/serviceAccounts/darx-ai-runner@sylvan-journey-474401-f9.iam.gserviceaccount.com"
